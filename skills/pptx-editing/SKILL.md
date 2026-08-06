@@ -70,6 +70,8 @@ check the assumption.
    MECHANICS from `pptx_kit` (`new_deck`, `blank_slide_layout`, `rect`,
    `slide_number`, `speaker_note`, `fit_picture`). Numbers on a slide must be read
    from a source file, never typed from memory (`ppt_rules` — data integrity).
+   **Import it — never paste a copy into the project.** See the next section for
+   how, and for what copying actually costs.
 4. **Never overflow.** Size images with `pptx_kit.fit_picture` (reads real pixel
    dims via PIL, fits inside a box preserving aspect). Textboxes don't autofit
    reliably — size them generously. **Footnote/table-note boxes are a common
@@ -86,6 +88,63 @@ check the assumption.
 6. **Audit numbers and type.** Cross-check every figure against its source file;
    `agent/tools/deck_audit.py`, `audit_font_sizes.py`, `audit_table_widths.py`,
    `audit_text_consistency.py` automate the mechanical passes.
+
+## Importing `pptx_kit` from a project — copy it and it WILL rot
+
+"Import the mechanics, keep the style local" only works if the project actually
+imports. The failure mode is quiet: the project has no obvious way to reach
+`pptx_kit.py`, so someone pastes the functions into the project's own kit "just
+for now". Nothing breaks that day — the copies drift later, and by then the two
+files look independent.
+
+Drop this in the project's kit module instead. No `pip install`, no `sys.path`
+hardcoding, works on any machine where the skill is installed:
+
+```python
+def _load_pptx_kit():
+    """Load pptx_kit.py from the installed pptx-editing skill (single source)."""
+    import importlib.util, os, sys
+    cands = [
+        os.environ.get("PPTX_KIT"),   # escape hatch: skill installed elsewhere
+        os.path.expanduser(os.path.join(
+            "~", ".claude", "skills", "pptx-editing", "scripts", "pptx_kit.py")),
+    ]
+    for p in cands:
+        if p and os.path.isfile(p):
+            spec = importlib.util.spec_from_file_location("pptx_kit", p)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["pptx_kit"] = mod
+            spec.loader.exec_module(mod)
+            return mod
+    raise ImportError("pptx_kit.py not found — install the pptx-editing skill, "
+                      "or set PPTX_KIT to its path.")
+
+_kit = _load_pptx_kit()
+m_frac = _kit.m_frac          # re-export what this project uses, by name
+equation_slot = _kit.equation_slot
+promote_equations = _kit.promote_equations
+```
+
+Re-export **explicitly by name** rather than `from pptx_kit import *` — it stays
+obvious which names are the kit's and which are the project's.
+
+**Keep local, on purpose**, anything whose *semantics* differ from the kit's —
+don't swap it in just because the name matches. Real example: a project's
+`check_overflow` used a **1-inch** tolerance while `pptx_kit.overflows` uses
+**0.02 in**; silently switching would have blocked builds that were passing by
+design. Same-name-different-meaning is fine as long as it's deliberate and
+commented.
+
+**What copying cost, concretely** (선택교과4, 2026-08-06): the project had pasted
+12 kit functions into its own `ppt_common.py`, and that file itself existed in 5
+copies (root + 4 per-day folders). A later session added the equation machinery to
+**one** copy. Result: the root generator raised `NameError: equation_slot is not
+defined` — a build script that simply could not run, while a sibling copy worked
+fine. Consolidating to one import fixed it, and regenerating all 7 decks produced
+**element-for-element identical output**, native equations included — proof the
+copies had been pure redundancy all along. If you inherit a project in this state,
+verify equivalence before deleting: run both implementations on the same inputs and
+diff the returned XML, then re-render every deck and compare.
 
 ## Scripts (`scripts/`) — import/run these, don't reinvent
 
