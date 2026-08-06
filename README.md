@@ -12,6 +12,7 @@ _A portable Agent Skill that teaches AI coding agents to build and edit PowerPoi
 without losing hand-edited work on rebuild, overflowing slide boundaries, or silently dropping
 speaker notes._
 
+[![CI](https://github.com/kangdacool/pptx-editing-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/kangdacool/pptx-editing-skill/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Agent Skill](https://img.shields.io/badge/format-SKILL.md-8A2BE2)
