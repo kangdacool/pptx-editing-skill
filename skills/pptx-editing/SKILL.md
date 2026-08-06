@@ -128,6 +128,17 @@ promote_equations = _kit.promote_equations
 Re-export **explicitly by name** rather than `from pptx_kit import *` — it stays
 obvious which names are the kit's and which are the project's.
 
+**Resolve the path; never hardcode it.** `sys.path.insert(0, r"D:\...\skills\pptx-editing\scripts")`
+works until the next machine, where the drive letter or install root differs. Two projects here had
+drifted into two different mechanisms (one hardcoded absolute, one resolved) — unify on resolution:
+`$PPTX_KIT` → `$CLAUDE_SKILLS_DIR/pptx-editing/scripts` → `~/.claude/skills/...`, and fail with a
+message that names the directory it looked in.
+
+**Do NOT install the skill as a symlink/junction inside a cloud-synced folder.** Cloud clients
+(OneDrive/Dropbox) do not replicate reparse points, so the skill silently disappears on your other
+machines — while looking perfectly fine on the one where you created it. Keep the installed copy a
+**real directory**; if it and the repo ever disagree, the repo wins — copy it over.
+
 **Keep local, on purpose**, anything whose *semantics* differ from the kit's —
 don't swap it in just because the name matches. Real example: a project's
 `check_overflow` used a **1-inch** tolerance while `pptx_kit.overflows` uses
