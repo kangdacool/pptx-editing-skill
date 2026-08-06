@@ -270,3 +270,90 @@ def promote_equations(pptx_path, equations):
     with zipfile.ZipFile(pptx_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for n in names:
             zout.writestr(n, data[n])
+
+
+def hang(paragraph, width):
+    """Hanging indent of `width` (an EMU-ish int, e.g. Pt(sz)*0.95) on one paragraph.
+
+    python-pptx exposes no API for this. Without it, a bullet whose text wraps to a second line
+    reads as a separate bullet (the wrapped line falls back to the paragraph's left edge, not
+    under the first line's text) -- this is what a hanging indent fixes.
+    """
+    pPr = paragraph._pPr if paragraph._pPr is not None else paragraph._p.get_or_add_pPr()
+    pPr.set("marL", str(int(width)))
+    pPr.set("indent", str(int(-width)))
+
+
+def text_units(s):
+    """Width of one line in 'half-width' units: Hangul/Jamo count as 2, everything else as 1.
+
+    Korean glyphs render roughly 2x the width of Latin ones in most UI fonts (Malgun Gothic
+    included) -- summing raw character count under-predicts how many lines a Korean-heavy string
+    will wrap to. Use this instead of len(s) when estimating wrap.
+    """
+    return sum(2 if ("가" <= ch <= "힣" or "ㄱ" <= ch <= "ㆎ") else 1 for ch in s)
+
+
+def wrapped_row_count(lines, wrap_units=50):
+    """Estimate total rendered rows for `lines` (each a paragraph/bullet string) once wrapped at
+    `wrap_units` half-width units per line. Use to pre-size a card/textbox height before drawing it,
+    so a two-line bullet doesn't get budgeted as one line and clip.
+
+    wrap_units depends on the box width and font size in use -- calibrate per component (e.g. count
+    units in a known-good rendered line at that width/size), don't assume 50 fits every layout.
+    """
+    return sum(1 + max(0, (text_units(ln) - 1) // wrap_units) for ln in lines)
+
+
+def check_surface_leaks(prs, terms):
+    """Scan every text frame in `prs` for any string in `terms` (editing traces, cross-document
+    references, AI-tell phrasing -- e.g. "이전 버전", "다음과 같이", meta-commentary asides).
+
+    Returns [(slide_no, term, snippet), ...] -- empty means clean.
+
+    `terms` has NO default and is not itself shared: what counts as a "leak" is register- and
+    project-specific (a phrase that's a tell in a lab-meeting deck may be normal prose in a teaching
+    deck), and a broad shared list produces false positives (documented: "다음과 같다" flagged in a
+    context where it was legitimate prose). Each project supplies its own list, informed by
+    output_surface.md's register test, not this function.
+    """
+    hits = []
+    for i, slide in enumerate(prs.slides):
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text
+            for term in terms:
+                if term in text:
+                    hits.append((i + 1, term, text.strip()[:60]))
+    return hits
+
+
+def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
+    """Save + gate on surface leaks and boundary overflow in one call. Raises SystemExit (does not
+    write a "saved" log line the caller can mistake for success) if either check fails -- a deck
+    that fails either check should not reach the user un-flagged.
+
+    Reuses `overflows()` per-slide (same tolerance as everywhere else in this module) rather than a
+    second boundary check with different math, so there is one definition of "overflowing," not two
+    that can disagree.
+    """
+    prs.save(path)
+    leaks = check_surface_leaks(prs, leak_terms or [])
+    overflow_hits = []
+    for i, slide in enumerate(prs.slides):
+        for name, r, b in overflows(slide, sw=sw, sh=sh, tol=tol):
+            overflow_hits.append((i + 1, name, r, b))
+    print("saved:", path, "slides=", len(prs.slides._sldIdLst))
+    if leaks:
+        print("[surface leaks]")
+        for slide_no, term, snippet in leaks:
+            print(f"  slide {slide_no}: '{term}' in \"{snippet}\"")
+    if overflow_hits:
+        print("[overflow]")
+        for slide_no, name, r, b in overflow_hits:
+            print(f"  slide {slide_no}: {name} right={r:.2f} bottom={b:.2f}")
+    if leaks or overflow_hits:
+        raise SystemExit(f"save_and_check failed -- leaks={len(leaks)}, overflow={len(overflow_hits)}. "
+                          f"Fix and rebuild before delivering.")
+    return prs

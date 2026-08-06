@@ -77,7 +77,10 @@ bad = overflows(slide, sw=13.333, sh=7.5)   # 경계 넘친 shape 목록 → 배
 ## §5 텍스트 — 신뢰할 autofit이 없다
 
 - `text_frame`의 자동 축소(MSO auto-size)는 렌더러/버전마다 다르게 동작 → **의존하지 않는다.**
-- 상자를 **넉넉히** 잡고, 줄 수·한글 폭(한글 글리프≈라틴의 2배)을 대략 계산해 높이를 준다.
+- 상자를 **넉넉히** 잡고, 줄 수·한글 폭(한글 글리프≈라틴의 2배)을 대략 계산해 높이를 준다 —
+  손으로 어림하지 말고 `pptx_kit.text_units`/`wrapped_row_count`로 계산할 것(§11).
+- 두 줄 이상 wrap되는 불릿은 `pptx_kit.hang(paragraph, width)`로 hanging indent를 줘야 wrap된
+  줄이 마커 밑이 아니라 왼쪽 여백으로 도로 빠지는 걸 막는다(python-pptx엔 이 속성이 없음).
 - 잘림은 오직 **렌더로만** 보인다(§7). 카드·각주·긴 제목은 렌더 확인 필수.
 - **폰트 하한(ppt_rules)**: 한글 제목바 30–32pt, 표 헤더 17pt, 본문 16pt, 보조 15pt,
   **13pt 미만 금지**. `audit_font_sizes.py`로 점검.
@@ -224,6 +227,29 @@ PowerPoint COM으로 별도 캡처해도 되지만 렌더 엔진이 다르면(so
 달라질 수 있으니, 가장 확실한 증거는 **검사기가 실제로 검사한 그 PDF**를 그대로 이미지로
 보는 것이다. 이 실수를 피하고 싶으면 애초에 PyMuPDF 블록 비교 대신 `deck_render_audit.py`의
 가장자리 픽셀-밀도 방식(`agent/tools/`)을 쓰는 것도 대안이다 — 그건 블록 병합 문제 자체가 없다.
+
+## §11 surface-leak 게이트(`check_surface_leaks`/`save_and_check`) — 금칙어 목록은 항상 호출자가 준다
+
+편집 흔적("이전 버전"), 교차문서 참조, AI 티(수사적 메타발언)를 슬라이드 텍스트에서 검출하는
+`check_surface_leaks(prs, terms)`는 **`terms`에 기본값이 없다.** 프로젝트마다 하나의 공유 금칙어
+목록을 두지 않는다 — 무엇이 "누출"인지는 산출물의 성격(학술발표 vs 학습 PPT vs 교육자료)마다
+다르고, 넓은 공유 목록은 **오탐을 만든다**(실사고: 정상적인 문맥의 "다음과 같다"가 금칙어 목록에
+걸려 잘못 flag된 적이 있음). 각 프로젝트는 `output_surface.md`의 "편집자 vs 청중" 레지스터
+테스트로 **자기 목록을 직접 만들어** 넘긴다:
+
+```python
+from pptx_kit import save_and_check
+MY_LEAK_TERMS = ["이전 버전", "수정했습니다", "다음 슬라이드에서"]  # 이 프로젝트만의 목록
+save_and_check(prs, OUT, leak_terms=MY_LEAK_TERMS)   # 저장 + 검사, 걸리면 SystemExit
+```
+
+`save_and_check`는 오버플로도 같이 검사한다 — 이때 `overflows()`를 슬라이드별로 재사용하므로(§4),
+"오버플로"의 정의가 검사기마다 다르게 갈릴 위험이 없다(과거 프로젝트별 사본은 여유 마진이 1인치
+vs 0.02인치로 서로 달랐다 — 하나로 합침).
+
+`hang(paragraph, width)`(§5의 hanging indent)와 `text_units`/`wrapped_row_count`(한글 2폭 가중
+줄바꿈 추정, 카드 높이를 그리기 전에 미리 계산할 때 씀)도 이 파일에 있다 — 프로젝트마다 따로
+구현하지 말고 import.
 
 ## 구조 원칙 (요약)
 

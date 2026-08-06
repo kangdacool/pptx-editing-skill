@@ -91,7 +91,7 @@ check the assumption.
 
 | Script | Purpose |
 |---|---|
-| `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
+| `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
 | `inspect_pptx.py FILE` | Structure + notes + **overflow** dump. First thing to run on any deck. |
 | `render_pptx.py FILE [--pdf OUT]` | Render to PDF (PowerPoint COM) then PNG per slide, for the §5 visual check. |
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |
@@ -119,6 +119,8 @@ Opens with a **"흔한 실패 TOP"**; skim that, then jump to the section you ne
   ones from scratch (no python-pptx or COM API for this), and a PyMuPDF overlap-checker pitfall.
   **Skip this unless a slide needs a real equation object** — `formula()`-style monospace text boxes
   don't need any of it.
+- **§11** surface-leak gating (`check_surface_leaks`/`save_and_check`) — why the banned-phrase list
+  is always caller-supplied, never a shared default
 
 ## Bash 툴 + 한글 경로: 간헐적 mojibake
 
