@@ -81,10 +81,15 @@ check the assumption.
    citation footnotes, an obesity-sensitivity table note). When you lengthen any
    note/footnote string, re-render and check that slide specifically, not just
    the ones you added.
-5. **Render, then LOOK.** `python scripts/render_pptx.py FILE.pptx` (PowerPoint
-   COM → PDF → PNG). python-pptx cannot tell you a card clipped its last line, a
-   footnote bled off the slide, or a title overran. **Any layout-affecting change
-   needs a rendered look** — steps 1–4 cannot see it.
+5. **Measure the fit, then render and LOOK.** Run
+   `python scripts/audit_text_fit.py FILE.pptx` first: it asks PowerPoint for the size the
+   text *actually* occupies (`TextFrame2.TextRange.BoundWidth/BoundHeight`) and reports only
+   text that runs **off the slide** or lands **on another text/picture**. That replaces
+   hunting for overflow by eye, which is what turns one tweak into a render-adjust cycle.
+   Then `python scripts/render_pptx.py FILE.pptx` (PowerPoint COM → PDF → PNG) and look —
+   the audit cannot judge crowding, an ugly mid-word break, or a wrong colour. **Any
+   layout-affecting change still needs a rendered look**; the audit just means you are no
+   longer looking *for overflow*.
 6. **Audit numbers and type.** Cross-check every figure against its source file;
    `agent/tools/deck_audit.py`, `audit_font_sizes.py`, `audit_table_widths.py`,
    `audit_text_consistency.py` automate the mechanical passes.
@@ -163,6 +168,7 @@ diff the returned XML, then re-render every deck and compare.
 |---|---|
 | `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
 | `inspect_pptx.py FILE` | Structure + notes + **overflow** dump. First thing to run on any deck. |
+| `audit_text_fit.py FILE [--all]` | Asks PowerPoint how big the text really is and flags only text that runs **off-slide** or **onto another text/picture**. Exit 1 on a hit, so a build can gate. **A textbox does not clip — it spills**, and spilling over a background fill is normal layering; treating either as an error makes the check cry wolf (two earlier cuts of this script did exactly that, 3/3 false on a clean deck). |
 | `render_pptx.py FILE [--pdf OUT]` | Render to PDF (PowerPoint COM) then PNG per slide, for the §5 visual check. |
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |
 
