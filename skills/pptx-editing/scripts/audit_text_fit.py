@@ -66,8 +66,12 @@ def measure(path):
                     is_pic = int(sp.Type) in (11, 13)
                 except Exception:
                     is_pic = False
+                try:                       # a table has no TextFrame, so it would be invisible
+                    is_tbl = int(sp.HasTable) == -1      # to collision checks unless flagged
+                except Exception:
+                    is_tbl = False
                 shapes.append(dict(name=name, l=l, t=t, w=w, h=h, tw=tw, th=th,
-                                   txt=txt, is_pic=is_pic))
+                                   txt=txt, is_pic=is_pic, is_tbl=is_tbl))
             slides.append((si, shapes))
     finally:
         pres.Close()
@@ -85,6 +89,10 @@ def main():
     ap.add_argument("deck")
     ap.add_argument("--all", action="store_true", help="also list plain spill (not an error)")
     ap.add_argument("--tol", type=float, default=0.02, help="inches of slack (default .02)")
+    ap.add_argument("--min", dest="minover", type=float, default=0.05,
+                    help="ignore overruns smaller than this, in inches (default .05). Below "
+                         "roughly this, nothing is visibly cut at normal font sizes — a real "
+                         "deck reported +0.02in and rendered perfectly clean.")
     a = ap.parse_args()
 
     sw, sh_, slides = measure(a.deck)
@@ -99,9 +107,12 @@ def main():
             grew = s["th"] > s["h"] + a.tol or s["tw"] > s["w"] + a.tol
             if grew:
                 spill.append((si, s, max(s["th"] - s["h"], s["tw"] - s["w"])))
-            if t_b > sh_ + a.tol or t_r > sw + a.tol:
-                offslide.append((si, s, max(t_b - sh_, t_r - sw)))
+            off = max(t_b - sh_, t_r - sw)
+            if off > a.minover:
+                offslide.append((si, s, off))
                 continue
+            if off > a.tol:
+                continue                    # past the edge but not visibly — geometry noise
             if not grew:
                 continue
             # Only the strip that spilled past the declared box can hit a neighbour — and only
@@ -111,11 +122,11 @@ def main():
             for o in shapes:
                 if o is s or o["w"] <= 0:
                     continue
-                carries_content = (o["tw"] is not None) or o["is_pic"]
+                carries_content = (o["tw"] is not None) or o["is_pic"] or o["is_tbl"]
                 if not carries_content:
                     continue
                 if overlap(s["l"], s["t"] + s["h"], t_r, t_b,          # spilled strip
-                           o["l"], o["t"], o["l"] + o["w"], o["t"] + o["h"], a.tol):
+                           o["l"], o["t"], o["l"] + o["w"], o["t"] + o["h"], a.minover):
                     collide.append((si, s, o))
                     break
 
