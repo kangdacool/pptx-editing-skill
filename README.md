@@ -59,7 +59,8 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 ### 안에 뭐가 있나
 
 - **`SKILL.md`** — 에이전트가 매번 읽는 핵심 규칙(항상 로드되므로 의도적으로 짧게 유지: 재빌드
-  손편집 보호, 노트 함정, 오버플로 방지, 워크플로 6단계).
+  손편집 보호, 노트 함정, 오버플로 방지, 워크플로 7단계 — 숫자·서식 감사에 더해 슬라이드 순서
+  감사까지).
 - **`references/pptx-guide.md`** — §1–§10으로 나뉜 상세 가이드(좌표계, 노트, 재빌드/`build_guard`,
   이미지, 텍스트, 표, 렌더링, 데이터 무결성, 학습용 PPT, 네이티브 OOXML 수식) — 필요한 절만 그때 읽음.
 - **`scripts/pptx_kit.py`** — 팔레트 무관 메커닉: `new_deck`, `speaker_note`(재빌드에도 안전한 노트),
@@ -111,7 +112,8 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 ### What's inside
 
 - **`SKILL.md`** — the core rules an agent reads every time (deliberately kept short since it's
-  always loaded: rebuild-safety, the notes gotcha, overflow prevention, a 6-step workflow).
+  always loaded: rebuild-safety, the notes gotcha, overflow prevention, a 7-step workflow — a
+  narrative-order audit alongside the numbers/formatting audits).
 - **`references/pptx-guide.md`** — detailed guide in §1–§10 (coordinates, notes, rebuild/
   `build_guard`, images, text, tables, rendering, data integrity, teaching-deck norms, native OOXML
   equations) — read only the section that's relevant.

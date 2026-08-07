@@ -93,6 +93,65 @@ check the assumption.
 6. **Audit numbers and type.** Cross-check every figure against its source file;
    `agent/tools/deck_audit.py`, `audit_font_sizes.py`, `audit_table_widths.py`,
    `audit_text_consistency.py` automate the mechanical passes.
+7. **Audit narrative order — a separate pass from step 6, but a cheap one.**
+   Unlike step 6 (which opens every source file to cross-check each figure —
+   real audit weight), this is a single read of just the titles+subtitles in
+   sequence (`python-pptx`, one script call, then read the ~1-line-per-slide
+   output once). No source-file lookups. For a normal-sized deck (15-20
+   slides) it's well under a minute; do it every time a deck is finalized or
+   revised, not just on request. Number/content accuracy audits (step 6) do
+   not catch sequencing bugs, and neither does a render-and-look (step 5,
+   which sees one slide at a time). Read the deck's
+   titles/subtitles/bullets *in order* looking specifically for: (a) a term or
+   abbreviation used substantively before the slide that defines it, (b) a
+   slide that references "the finding we just saw" / "as shown above" for
+   content that actually appears *later* in the deck. Both are invisible to
+   grep-for-wrong-numbers and invisible to single-slide overflow checks — they
+   only surface by reading slide N's text against what slide N-1 vs N+5
+   actually established. Real example (blue_green_lone, 2026-08-07): a slide
+   used "NDVI" as if already defined, 7 slides before the slide that defined
+   it; another slide's punchline sentence presupposed a finding not revealed
+   until 7 slides later. Both read fine in isolation — only the order was
+   wrong. When the user says something like "the order matters" or "check
+   this is accurate," run this pass explicitly; don't fold it into step 6 and
+   call it done.
+
+## Reordering slides in a script-generated deck — parse blocks, don't hand-edit
+
+If slides are built in sequence by a script with per-slide comment markers
+(e.g. `# ==== Slide N — title`), moving a slide (or a run of slides) by
+cut-pasting the source lines by hand is exactly the kind of large multi-line
+edit that risks slicing through a shared variable or leaving an orphaned
+half-block. Safer: parse the file into blocks split on the marker regex, hold
+them in an ordered list, splice/insert by label, and reassemble — the same
+approach a mail-merge or template engine uses, applied to the script's own
+source.
+```python
+import re
+marker_re = re.compile(r'^# =+ (Slide[^\n]*)\n', re.MULTILINE)
+markers = list(marker_re.finditer(text))
+preamble = text[:markers[0].start()]
+blocks, order = {}, []
+for i, m in enumerate(markers):
+    end = markers[i + 1].start() if i + 1 < len(markers) else len(text)
+    label = m.group(1).strip()
+    blocks[label] = text[m.start():end]
+    order.append(label)
+
+# move "Slide 6b" to sit right before "Slide 3":
+order.remove("Slide 6b — title")
+order.insert(order.index("Slide 3 — title"), "Slide 6b — title")
+
+new_text = preamble + "".join(blocks[l] for l in order)
+```
+The point: parse to blocks first, reorder the *list of labels* with
+`list.remove`/`list.insert`, reassemble last. Never find-and-replace across a
+slide boundary by hand. This only works if each
+block is self-contained (loads its own data, doesn't depend on a variable
+defined by a block between its old and new position) — check for that first;
+if two blocks share state, move them as a unit. After reordering, rebuild and
+re-render the moved slides specifically (per step 7 above, not just step 5)
+to confirm the surrounding narrative now reads correctly, not just that nothing overflows.
 
 ## Importing `pptx_kit` from a project — copy it and it WILL rot
 
