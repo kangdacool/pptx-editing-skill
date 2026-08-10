@@ -93,12 +93,20 @@ check the assumption.
 6. **Audit the surface text.** `python scripts/audit_surface_text.py FILE.pptx --max-fig N --max-tab N`.
    배포 전 무조건 1회. 지웠다고 생각한 뒤에도 걸린다 — 실제로 2026-08-10 세션에서 "다 지웠다"고
    넘긴 직후 4건이 더 나왔다.
-7. **Audit numbers and type.** Cross-check every figure against its source file. Mechanical passes
-   live outside this skill, in the lab's shared `agent/tools/`: `deck_audit.py` (XML referential
-   integrity — sections, zoom links, creationId dupes, TOC↔divider match, orphaned media),
-   `deck_render_audit.py` (rendered-pixel check for table-row overflow that coordinates miss),
-   `audit_font_sizes.py`, `audit_table_widths.py`, `audit_text_consistency.py`. Run what's relevant
-   to the deck at hand — not every pass fires on every deck.
+7. **Audit numbers and type.** Cross-check every figure against its source file. The mechanical
+   passes live outside this skill, in the lab's shared `agent/tools/`. **Don't run them one by one
+   from memory — that is how they get forgotten** (these scripts were missing from this file
+   entirely until 2026-08-10). One entry point runs every check that applies to the artifact and
+   reports what it skipped and why:
+
+       python agent/tools/audit.py FILE.pptx      # also .docx .hwpx .md .tex
+       python agent/tools/audit.py --list         # the whole artifact-type x check map
+
+   It dispatches to `audit_text_fit.py` and `audit_surface_text.py` from this skill plus
+   `deck_audit.py` (XML referential integrity), `deck_render_audit.py` (rendered-pixel table
+   overflow), `audit_font_sizes.py`, and `audit_table_widths.py`. Exit 1 if any check fails, so a
+   build can gate on it. If you are working from the standalone public skill without the lab's
+   `agent/tools/`, run this skill's two scripts directly and know that the rest are not covered.
 8. **Audit narrative order — a separate pass from step 7, but a cheap one.**
    Unlike step 7 (which opens every source file to cross-check each figure —
    real audit weight), this is a single read of just the titles+subtitles in
