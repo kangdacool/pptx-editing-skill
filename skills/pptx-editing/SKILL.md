@@ -100,7 +100,12 @@ check the assumption.
    reports what it skipped and why:
 
        python agent/tools/audit.py FILE.pptx      # also .docx .hwpx .md .tex
-       python agent/tools/audit.py --list         # the whole artifact-type x check map
+       python agent/tools/audit.py --list         # the whole genre x check map
+
+   It dispatches on **genre, not file extension** — a conference poster, a lab-meeting deck and a
+   talk deck are all `.pptx` but want different font floors and different surface rules (a meeting
+   deck *should* print `출처: x.csv`; a poster should not). It prints the genre it inferred and
+   why; override with `--genre poster|slide|meeting`.
 
    It dispatches to `audit_text_fit.py` and `audit_surface_text.py` from this skill plus
    `deck_audit.py` (XML referential integrity), `deck_render_audit.py` (rendered-pixel table

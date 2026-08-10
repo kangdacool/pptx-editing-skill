@@ -73,9 +73,14 @@ def main():
                     help="산출물의 Figure 최대 번호. 초과 참조를 번호 drift로 신고.")
     ap.add_argument("--max-tab", type=int, default=None,
                     help="산출물의 Table 최대 번호.")
+    ap.add_argument("--skip", action="append", default=[], choices=sorted(DEFAULT),
+                    help="이 register에선 정상인 기본 범주를 끈다. 예: 내부 회의 덱은 "
+                         "'출처: xxx.csv' 표기가 **바람직하므로** --skip provenance.")
     a = ap.parse_args()
 
-    pats = {k: re.compile(v, re.I) for k, v in DEFAULT.items()}
+    pats = {k: re.compile(v, re.I) for k, v in DEFAULT.items() if k not in a.skip}
+    if a.skip:
+        print("(register상 제외한 범주: %s)" % ", ".join(sorted(set(a.skip))))
     for i, ex in enumerate(a.extra_pattern):
         pats["custom%d" % (i + 1)] = re.compile(ex, re.I)
 
