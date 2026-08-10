@@ -22,6 +22,12 @@ Those are what this reports. Plain spill is listed only with --all, as informati
 
 Exit 1 if anything runs off-slide or collides, so a build can gate on it.
 Requires PowerPoint (Windows); opens the deck read-only and never saves.
+
+Blind spot: a table shape has no shape-level TextFrame (its text lives per-cell), so this script
+cannot measure it and table rows never appear in the report — not even as spill. PowerPoint expands
+a table's row height to fit its content, which can push the table past the slide bottom with no
+warning here. For any deck with tables, also run the lab's `agent/tools/deck_render_audit.py`, which
+checks the rendered PNG's bottom edge instead of measured text bounds and catches exactly this case.
 """
 import argparse
 import io

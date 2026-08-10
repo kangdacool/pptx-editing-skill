@@ -18,6 +18,18 @@
   산출물에 Figure가 3개뿐인데 "Figure 9"가 캡션에 남아 있으면 청중에게 없는 그림을 가리킨다.
 
 exit 1 on any hit -- 빌드 파이프라인에서 게이트로 쓸 수 있다.
+
+이 파일의 DEFAULT는 **다른 감사 도구들과 다른 철학**이다 -- `pptx_kit.check_surface_leaks`와
+`agent/tools/surface_leak_scan.py`는 의도적으로 기본 목록이 없다("register마다 안전한 문구가
+다르므로 공유 기본값은 어느 한쪽에서 오탐·누락을 낸다"는 것이 그 두 도구의 명시된 설계 원칙).
+이 파일이 DEFAULT를 가진 이유는 대상이 다르기 때문이다 -- 아래 4종은 영문 학술 산출물 표면에서
+**register와 거의 무관하게 늘 문제인** 기계적 패턴("justified", "see Table 3", "I.e.,", 내부
+파일명)만 골랐다. 문서별로 안전성이 갈리는 표현(예: "다음과 같다"가 정당한 산문인 문서도 있다)은
+DEFAULT에 넣지 않았고, 그런 표현은 `--extra-pattern`으로 이 문서에 한해 추가한다 -- 그러면 이
+스크립트도 사실상 "기계적 베이스라인 + caller-supplied 추가"가 되어 다른 두 도구와 같은 원칙을
+따르게 된다. 셋의 관계: **이 파일**은 pptx 산출물 전용 베이스라인, **surface_leak_scan.py**는
+어떤 텍스트 파일에도 쓰는 register-specific 전용(기본값 없음), **check_surface_leaks**는 그
+철학을 파이썬 객체 저장 시점에 인라인으로 거는 게이트다.
 """
 import re
 import sys

@@ -316,6 +316,12 @@ def check_surface_leaks(prs, terms):
     deck), and a broad shared list produces false positives (documented: "다음과 같다" flagged in a
     context where it was legitimate prose). Each project supplies its own list, informed by
     output_surface.md's register test, not this function.
+
+    See also: `audit_surface_text.py` in this same skill runs a small register-agnostic baseline
+    (English academic-writing tells: "justified", "see Table 3", "I.e.,") as a standalone script with
+    its own exit-1 gate -- run it in addition to this in-process check, not instead of it. For any
+    non-pptx deliverable (.tex, .md, rendered .pdf), `agent/tools/surface_leak_scan.py` generalizes
+    this same no-default, caller-supplied-terms approach.
     """
     hits = []
     for i, slide in enumerate(prs.slides):

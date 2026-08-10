@@ -245,7 +245,16 @@ def min_font_report(slide, min_pt=DEFAULT_MIN_PT):
 
     Catches text created without going through kf() — e.g. a table cell font set by hand, or a run
     whose size was computed and happens to round under the floor. kf()'s assert only protects text
-    that actually goes through it; this is the safety net for text that didn't. Empty return = clean."""
+    that actually goes through it; this is the safety net for text that didn't. Empty return = clean.
+
+    Narrow by design: this only re-checks the [RUN] case (a literal font size on a run). It does NOT
+    catch an image placed smaller than native — baked-in labels shrink with it, 11pt drawn at 0.7x
+    placement renders at 7.7pt — or an undersized cex=/size=/fontsize= literal in the R/Python script
+    that generated a figure. This function has no dependency outside this file, so a standalone
+    install of the public skill only gets this narrower check. If the lab's shared tooling is also
+    available, run `agent/tools/audit_font_sizes.py` on the built .pptx for the fuller three-pronged
+    check (RUN + SCALE + SRC) — it is not imported here, so the two can drift; if the definition of
+    "too small" changes in one, check whether it should change in the other."""
     hits = []
     for shp in slide.shapes:
         runs = []
