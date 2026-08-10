@@ -61,13 +61,21 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 - **`SKILL.md`** — 에이전트가 매번 읽는 핵심 규칙(항상 로드되므로 의도적으로 짧게 유지: 재빌드
   손편집 보호, 노트 함정, 오버플로 방지, 워크플로 7단계 — 숫자·서식 감사에 더해 슬라이드 순서
   감사까지).
-- **`references/pptx-guide.md`** — §1–§10으로 나뉜 상세 가이드(좌표계, 노트, 재빌드/`build_guard`,
-  이미지, 텍스트, 표, 렌더링, 데이터 무결성, 학습용 PPT, 네이티브 OOXML 수식) — 필요한 절만 그때 읽음.
+- **`references/pptx-guide.md`** — §1–§12으로 나뉜 상세 가이드(좌표계, 노트, 재빌드/`build_guard`,
+  이미지, 텍스트, 표, 렌더링, 데이터 무결성, 학습용 PPT, 네이티브 OOXML 수식, surface-leak 게이트,
+  **학술 포스터**) — 필요한 절만 그때 읽음.
 - **`scripts/pptx_kit.py`** — 팔레트 무관 메커닉: `new_deck`, `speaker_note`(재빌드에도 안전한 노트),
-  `fit_picture`(PIL 실측 기반 오버플로 안전 이미지), `overflows`(경계 검사), 네이티브 수식 빌더.
+  `fit_picture`(PIL 실측 기반 오버플로 안전 이미지), `overflows`(경계 검사), 네이티브 수식 빌더,
+  `check_surface_leaks`/`save_and_check`(금칙어·오버플로 게이트).
+- **`scripts/poster_kit.py`** — **대형 캔버스 학술 포스터** 전용 메커닉(2단 그리드, 최소 글자 크기
+  강제, 폭 고정 이미지 배치, `min_font_report`) — 16:9 슬라이드가 아닌 cm 단위 벽보용.
 - **`scripts/inspect_pptx.py`** — 슬라이드별 구조·텍스트·노트·오버플로 덤프.
 - **`scripts/render_pptx.py`** — PowerPoint COM으로 PDF→PNG 렌더링(시각 QA용).
-- **`scripts/selftest.py`** — 실제 템플릿 없이 `speaker_note`의 왕복(쓰기→저장→재열기→읽기)을 증명.
+- **`scripts/audit_text_fit.py`** — PowerPoint COM으로 실측한 텍스트 크기 기준 오버플로/겹침 감사.
+- **`scripts/audit_surface_text.py`** — 편집 해명·내비게이션 안내·재진술·Figure/Table 번호 drift를
+  기계로 훑는다. 빌드 게이트로 쓸 수 있게 exit 1.
+- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — 실제 템플릿 없이 각각
+  `speaker_note`의 왕복(쓰기→저장→재열기→읽기)과 `poster_kit`의 폰트 최솟값·그리드 계산을 증명.
 
 ### 라이선스
 
@@ -114,16 +122,23 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 - **`SKILL.md`** — the core rules an agent reads every time (deliberately kept short since it's
   always loaded: rebuild-safety, the notes gotcha, overflow prevention, a 7-step workflow — a
   narrative-order audit alongside the numbers/formatting audits).
-- **`references/pptx-guide.md`** — detailed guide in §1–§10 (coordinates, notes, rebuild/
+- **`references/pptx-guide.md`** — detailed guide in §1–§12 (coordinates, notes, rebuild/
   `build_guard`, images, text, tables, rendering, data integrity, teaching-deck norms, native OOXML
-  equations) — read only the section that's relevant.
+  equations, surface-leak gating, **academic posters**) — read only the section that's relevant.
 - **`scripts/pptx_kit.py`** — palette-agnostic mechanics: `new_deck`, `speaker_note` (rebuild-proof
   notes), `fit_picture` (PIL-measured, overflow-safe image placement), `overflows` (boundary check),
-  native-equation builders.
+  native-equation builders, `check_surface_leaks`/`save_and_check` (banned-phrase + overflow gate).
+- **`scripts/poster_kit.py`** — mechanics for **large-format academic posters** — 2-column grid,
+  enforced minimum legible font size, width-locked image placement, `min_font_report` — a cm-scale
+  wall poster, not a 16:9 slide.
 - **`scripts/inspect_pptx.py`** — per-slide structure/text/notes/overflow dump.
 - **`scripts/render_pptx.py`** — PDF→PNG rendering via PowerPoint COM, for visual QA.
-- **`scripts/selftest.py`** — proves `speaker_note` round-trips (write → save → reopen → read) with
-  no real template needed.
+- **`scripts/audit_text_fit.py`** — overflow/overlap audit using PowerPoint-measured text size.
+- **`scripts/audit_surface_text.py`** — machine sweep for editing-process leakage, navigation asides,
+  restated text, and figure/table number drift. Exits 1, so it can gate a build.
+- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — prove `speaker_note`'s round-trip
+  (write → save → reopen → read) and `poster_kit`'s font-floor/grid math respectively, with no real
+  template or poster project needed.
 
 ### License
 

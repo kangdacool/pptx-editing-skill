@@ -90,16 +90,22 @@ check the assumption.
    the audit cannot judge crowding, an ugly mid-word break, or a wrong colour. **Any
    layout-affecting change still needs a rendered look**; the audit just means you are no
    longer looking *for overflow*.
-6. **Audit numbers and type.** Cross-check every figure against its source file;
-   `agent/tools/deck_audit.py`, `audit_font_sizes.py`, `audit_table_widths.py`,
-   `audit_text_consistency.py` automate the mechanical passes.
-7. **Audit narrative order — a separate pass from step 6, but a cheap one.**
-   Unlike step 6 (which opens every source file to cross-check each figure —
+6. **Audit the surface text.** `python scripts/audit_surface_text.py FILE.pptx --max-fig N --max-tab N`.
+   배포 전 무조건 1회. 지웠다고 생각한 뒤에도 걸린다 — 실제로 2026-08-10 세션에서 "다 지웠다"고
+   넘긴 직후 4건이 더 나왔다.
+7. **Audit numbers and type.** Cross-check every figure against its source file. Mechanical passes
+   live outside this skill, in the lab's shared `agent/tools/`: `deck_audit.py` (XML referential
+   integrity — sections, zoom links, creationId dupes, TOC↔divider match, orphaned media),
+   `deck_render_audit.py` (rendered-pixel check for table-row overflow that coordinates miss),
+   `audit_font_sizes.py`, `audit_table_widths.py`, `audit_text_consistency.py`. Run what's relevant
+   to the deck at hand — not every pass fires on every deck.
+8. **Audit narrative order — a separate pass from step 7, but a cheap one.**
+   Unlike step 7 (which opens every source file to cross-check each figure —
    real audit weight), this is a single read of just the titles+subtitles in
    sequence (`python-pptx`, one script call, then read the ~1-line-per-slide
    output once). No source-file lookups. For a normal-sized deck (15-20
    slides) it's well under a minute; do it every time a deck is finalized or
-   revised, not just on request. Number/content accuracy audits (step 6) do
+   revised, not just on request. Number/content accuracy audits (step 7) do
    not catch sequencing bugs, and neither does a render-and-look (step 5,
    which sees one slide at a time). Read the deck's
    titles/subtitles/bullets *in order* looking specifically for: (a) a term or
@@ -113,7 +119,7 @@ check the assumption.
    it; another slide's punchline sentence presupposed a finding not revealed
    until 7 slides later. Both read fine in isolation — only the order was
    wrong. When the user says something like "the order matters" or "check
-   this is accurate," run this pass explicitly; don't fold it into step 6 and
+   this is accurate," run this pass explicitly; don't fold it into step 7 and
    call it done.
 
 ## Reordering slides in a script-generated deck — parse blocks, don't hand-edit
@@ -228,8 +234,11 @@ diff the returned XML, then re-render every deck and compare.
 | `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
 | `inspect_pptx.py FILE` | Structure + notes + **overflow** dump. First thing to run on any deck. |
 | `audit_text_fit.py FILE [--all]` | Asks PowerPoint how big the text really is and flags only text that runs **off-slide** or **onto another text/picture**. Exit 1 on a hit, so a build can gate. **A textbox does not clip — it spills**, and spilling over a background fill is normal layering; treating either as an error makes the check cry wolf (two earlier cuts of this script did exactly that, 3/3 false on a clean deck). |
+| `audit_surface_text.py FILE [--max-fig N] [--max-tab N]` | «있으면 안 되는 말»이 남았는지 기계로 훑는다 — 편집 해명·내비게이션 안내·재진술 신호·내부 파일명, 그리고 **번호 drift**(산출물엔 Figure가 3개인데 캡션에 "Figure 9"가 남은 경우). `audit_text_fit.py`가 «글자가 넘치는가»를 본다면 이건 «내용이 표면에 남았는가»를 본다. exit 1이라 빌드 게이트로 쓸 수 있다. 사람 눈으로 훑는 방식은 반복해서 실패한다. |
 | `render_pptx.py FILE [--pdf OUT]` | Render to PDF (PowerPoint COM) then PNG per slide, for the §5 visual check. |
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |
+| `poster_kit.py` | Palette-agnostic mechanics for **large-format academic posters** (cm-scale canvas, not a 16:9 slide) — `two_col_grid`, `sectitle`, `bullets`/`caption`/`ptable` (all with an enforced minimum legible font size via `kf`), `pic_cm` (width-locked, no silent shrink-below-floor), `min_font_report` (catches text that bypassed `kf`). See guide §12 before building a poster — the 2-column-not-3, one-accent-color, narrative-caption habits it encodes. |
+| `poster_kit_selftest.py` | Proves `poster_kit`'s font-floor enforcement and grid math without a real poster project. |
 
 **Shared lab tools this skill leans on** (in `agent/tools/`, already cross-project):
 `build_guard.py` (md5 overwrite guard + stamp), `flowchart_generator.py`
@@ -256,6 +265,8 @@ Opens with a **"흔한 실패 TOP"**; skim that, then jump to the section you ne
   don't need any of it.
 - **§11** surface-leak gating (`check_surface_leaks`/`save_and_check`) — why the banned-phrase list
   is always caller-supplied, never a shared default
+- **§12** **academic posters** (`poster_kit.py`) — 2-column-not-3, enforced min font size, figures at
+  layout size (never shrunk post-hoc), narrative captions, one accent color. Read before any poster build.
 
 ## Bash 툴 + 한글 경로: 간헐적 mojibake
 
