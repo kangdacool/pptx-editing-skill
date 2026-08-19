@@ -59,7 +59,7 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 ### 안에 뭐가 있나
 
 - **`SKILL.md`** — 에이전트가 매번 읽는 핵심 규칙(항상 로드되므로 의도적으로 짧게 유지: 재빌드
-  손편집 보호, 노트 함정, 오버플로 방지, 워크플로 7단계 — 숫자·서식 감사에 더해 슬라이드 순서
+  손편집 보호, 노트 함정, 오버플로 방지, 워크플로 8단계 — 숫자·서식 감사에 더해 슬라이드 순서
   감사까지).
 - **`references/pptx-guide.md`** — §1–§12으로 나뉜 상세 가이드(좌표계, 노트, 재빌드/`build_guard`,
   이미지, 텍스트, 표, 렌더링, 데이터 무결성, 학습용 PPT, 네이티브 OOXML 수식, surface-leak 게이트,
@@ -69,6 +69,8 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   `check_surface_leaks`/`save_and_check`(금칙어·오버플로 게이트).
 - **`scripts/poster_kit.py`** — **대형 캔버스 학술 포스터** 전용 메커닉(2단 그리드, 최소 글자 크기
   강제, 폭 고정 이미지 배치, `min_font_report`) — 16:9 슬라이드가 아닌 cm 단위 벽보용.
+  `ptable`이 돌려주는 높이는 `행높이 × 행수`가 아니라 **셀이 실제로 줄바꿈된 것을 반영한 참값**이라,
+  표 바로 밑에 놓은 캡션이 렌더에서 마지막 행에 겹치지 않는다.
 - **`scripts/inspect_pptx.py`** — 슬라이드별 구조·텍스트·노트·오버플로 덤프.
 - **`scripts/render_pptx.py`** — PowerPoint COM으로 PDF→PNG 렌더링(시각 QA용).
 - **`scripts/audit_text_fit.py`** — PowerPoint COM으로 실측한 텍스트 크기 기준 오버플로/겹침 감사.
@@ -120,7 +122,7 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 ### What's inside
 
 - **`SKILL.md`** — the core rules an agent reads every time (deliberately kept short since it's
-  always loaded: rebuild-safety, the notes gotcha, overflow prevention, a 7-step workflow — a
+  always loaded: rebuild-safety, the notes gotcha, overflow prevention, an 8-step workflow — a
   narrative-order audit alongside the numbers/formatting audits).
 - **`references/pptx-guide.md`** — detailed guide in §1–§12 (coordinates, notes, rebuild/
   `build_guard`, images, text, tables, rendering, data integrity, teaching-deck norms, native OOXML
@@ -130,7 +132,9 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   native-equation builders, `check_surface_leaks`/`save_and_check` (banned-phrase + overflow gate).
 - **`scripts/poster_kit.py`** — mechanics for **large-format academic posters** — 2-column grid,
   enforced minimum legible font size, width-locked image placement, `min_font_report` — a cm-scale
-  wall poster, not a 16:9 slide.
+  wall poster, not a 16:9 slide. The height `ptable` returns is the true sum over rows whose cells
+  actually wrap, not `row_height × n_rows`, so a caption placed under the table does not end up
+  overlapping its last row at render time.
 - **`scripts/inspect_pptx.py`** — per-slide structure/text/notes/overflow dump.
 - **`scripts/render_pptx.py`** — PDF→PNG rendering via PowerPoint COM, for visual QA.
 - **`scripts/audit_text_fit.py`** — overflow/overlap audit using PowerPoint-measured text size.

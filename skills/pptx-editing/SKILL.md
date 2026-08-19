@@ -81,6 +81,15 @@ check the assumption.
    citation footnotes, an obesity-sensitivity table note). When you lengthen any
    note/footnote string, re-render and check that slide specifically, not just
    the ones you added.
+
+   **The mirror image: a helper that EXPANDS to fill the slide.** A whole-slide
+   table helper typically derives its row height from all the space left below
+   the header, so it always reaches the bottom. Put a card or a second block
+   under it and the two silently overlap — no error, and every coordinate you
+   passed is individually correct. Fix the helper, don't nudge the card: add a
+   variant that takes an explicit bottom edge (`table_block(y0, y1)` beside
+   `table_slide`) so a slide sharing space with a table cannot be built wrong.
+   A 2026-08-19 deck hit this on four slides at once.
 5. **Measure the fit, then render and LOOK.** Run
    `python scripts/audit_text_fit.py FILE.pptx` first: it asks PowerPoint for the size the
    text *actually* occupies (`TextFrame2.TextRange.BoundWidth/BoundHeight`) and reports only

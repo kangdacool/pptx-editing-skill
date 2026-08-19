@@ -67,6 +67,57 @@ def test_bullets_sectitle_caption_ptable_render():
     assert y > 3  # something was drawn
 
 
+def test_ptable_row_grows_for_wrapped_cell():
+    """2026-08-14 regression: a row whose cell text wraps at the column's real width must get a
+    taller row (and a taller total returned height) than a row of short cells at the same rowh —
+    otherwise the caller places the next element (usually a caption) using an undershot height and
+    it lands on top of the table's real last row. Hit 3x independently in the same poster build
+    (a row label, a table header cell, a wrapped title) before ptable() computed this itself."""
+    _, sl = blank_slide()
+    narrow_col = [6, 6]  # cm - narrow enough that a long phrase must wrap
+    short_rows = [["Hdr", "Hdr"], ["A", "B"]]
+    h_short = pk.ptable(sl, short_rows, 3, 3, sum(narrow_col), narrow_col,
+                         header_color=BAR, alt_color=PALE, white=WHITE, ink=INK, rowh=1.5)
+    long_rows = [["Hdr", "Hdr"], ["This label is long enough that it must wrap here", "B"]]
+    h_long = pk.ptable(sl, long_rows, 3, 30, sum(narrow_col), narrow_col,
+                        header_color=BAR, alt_color=PALE, white=WHITE, ink=INK, rowh=1.5)
+    assert h_long > h_short, (
+        "a wrapped-cell table must report a taller total height than an all-short-cell table "
+        "at the same rowh — otherwise ptable() is still under-predicting wrap")
+    # the actual row height set on the shape must also reflect the wrap, not just the return value
+    tbl_long = sl.shapes[-1].table
+    assert tbl_long.rows[1].height > Cm(1.5 + 0.01), (
+        "the wrapped data row's own .height must exceed the rowh floor")
+
+
+def test_ptable_wrapped_title_matches_returned_height():
+    """A title too long for one line must grow the title row AND the returned total height by the
+    same amount PowerPoint will actually render, not just the ad-hoc '+1 row' guess a caller-side
+    correction used before this was computed inside ptable() itself."""
+    _, sl = blank_slide()
+    widths = [8, 8]
+    long_title = "This title is deliberately long enough that it will not fit on one line at this width"
+    h = pk.ptable(sl, [["A", "B"], ["1", "2"]], 3, 3, sum(widths), widths,
+                  header_color=BAR, alt_color=PALE, white=WHITE, ink=INK, title=long_title)
+    tbl = sl.shapes[-1].table
+    # returned height must equal the sum of the ACTUAL row heights ptable() set - if these
+    # disagree, whatever the caller places next will be mispositioned relative to the real table.
+    actual_total_cm = sum(row.height for row in tbl.rows) / 360000.0  # EMU -> cm
+    assert abs(h - actual_total_cm) < 0.05, (
+        "ptable()'s returned height must match the sum of the row heights it actually set")
+
+
+def test_stack_box_sized_for_its_own_content():
+    """stack_box() must grow for more lines - a box for 3 lines must be taller than a box for 1
+    line at the same width/font, and must not raise the kf() min-size assertion."""
+    _, sl = blank_slide()
+    _, h1 = pk.stack_box(sl, 3, 3, 15, [("One line", True, INK)], fill=WHITE)
+    _, h3 = pk.stack_box(sl, 3, 20, 15,
+                          [("Line one", True, INK), ("Line two", False, GRAY),
+                           ("Line three", False, GRAY)], fill=WHITE)
+    assert h3 > h1, "a 3-line stack_box must be taller than a 1-line one"
+
+
 def test_min_font_report_catches_bypass():
     _, sl = blank_slide()
     # a run created WITHOUT poster_kit.kf(), i.e. bypassing the floor
