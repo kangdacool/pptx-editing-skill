@@ -9,7 +9,10 @@
   돌리자 4건이 더 나왔다. 사람 눈으로 훑는 방식은 반복해서 실패한다 -- 기계로 훑어야 한다.
 
 무엇을 잡나 (기본 4종):
-  meta        편집 해명·검정 의미 해설 ("justified", "not just", "are not interpreted")
+  meta        편집 해명·검정 의미 해설·자기지시적 회고 ("justified", "not just",
+              "are not interpreted", "already unreliable" -- 2026-08-16 brush_cog
+              Table 5 캡션에서 실제로 잡힌 사례: 독자가 처음 보는 표인데 "already"로
+              마치 앞서 논의한 것처럼 서술)
   nav         내비게이션 안내 ("see Table 3", "column 2", "decomposed in")
   restate     재진술 신호 ("I.e.,", "in other words")
   provenance  내부 파일명·파이프라인 잔재 (".csv", "Source: TableX_...")
@@ -38,7 +41,8 @@ import argparse
 DEFAULT = {
     "meta": r"\bjustified\b|\bnot just\b|are not interpreted|separation artifact|"
             r"\brobustness\b|sensitivity analys|\bverified\b|directly testing|"
-            r"\bnotably\b|\bimportantly\b|\bhonestly\b|it is worth noting",
+            r"\bnotably\b|\bimportantly\b|\bhonestly\b|it is worth noting|"
+            r"\balready\s+(unreliable|noted|established|known|discussed|mentioned|shown|seen)\b",
     "nav": r"see (Table|Figure|column|panel)|decomposed in|\bcolumn \d|as shown (above|below)|"
            r"refer to (Table|Figure)",
     "restate": r"\bI\.e\.|\bi\.e\.,|in other words|that is to say|this means that",
