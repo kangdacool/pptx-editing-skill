@@ -8,7 +8,7 @@
   같은 세션에서 사용자가 "쓸데없는 서술이 많다"고 두 번 지적했고, 지운 뒤에도 즉석 grep을
   돌리자 4건이 더 나왔다. 사람 눈으로 훑는 방식은 반복해서 실패한다 -- 기계로 훑어야 한다.
 
-무엇을 잡나 (기본 4종):
+무엇을 잡나 (기본 5종 -- 앞 4종은 «편집 흔적», 마지막은 «수사»):
   meta        편집 해명·검정 의미 해설·자기지시적 회고 ("justified", "not just",
               "are not interpreted", "already unreliable" -- 2026-08-16 brush_cog
               Table 5 캡션에서 실제로 잡힌 사례: 독자가 처음 보는 표인데 "already"로
@@ -16,6 +16,12 @@
   nav         내비게이션 안내 ("see Table 3", "column 2", "decomposed in")
   restate     재진술 신호 ("I.e.,", "in other words")
   provenance  내부 파일명·파이프라인 잔재 (".csv", "Source: TableX_...")
+  rhetoric    ⭐ 슬라이드의 «AI가 만든 티»는 내용이 아니라 수사다 -- 카드 제목이 그 상자의
+              «수사적 기능»("The hook"·"Key point"), 추정치 뒤 화살표, 그리고 덱 전체 문맥으로
+              판정하는 대문자 강조(caps_emphasis: 같은 낱말이 ALLCAPS와 소문자로 둘 다 나오면
+              약어가 아니라 강조다 -- 그 대조 하나로 NHANES와 DEPLETES가 갈린다).
+              판정은 금칙어가 아니라 «화자»다: 동료에게 연구를 말하는 저자인가, 논문을 파는
+              편집자인가. 경구형 대구·`≠`/`≈`는 일부러 뺐다(각각 판단·register 의존).
 
 번호 drift(파이프라인 번호가 산출물에 남은 것)는 --max-fig/--max-tab로 잡는다:
   산출물에 Figure가 3개뿐인데 "Figure 9"가 캡션에 남아 있으면 청중에게 없는 그림을 가리킨다.
@@ -47,7 +53,48 @@ DEFAULT = {
            r"refer to (Table|Figure)",
     "restate": r"\bI\.e\.|\bi\.e\.,|in other words|that is to say|this means that",
     "provenance": r"\.csv\b|\.rds\b|\.xlsx\b|Source: [A-Z][A-Za-z0-9_]*_|output/tables",
+    # 2026-08-20 신설. 위 넷은 «편집 흔적»(내가 편집자로서 남긴 말)이고, 이건 «수사»다 --
+    # 문장이 전부 참인데도 «생성물»로 읽히게 만드는 형태. 규칙은 [[ppt-rules]]에 2026-08-03부터
+    # 있었고 grep 한 줄까지 적혀 있었는데 도구가 없어서 아무도 안 돌렸다.
+    #   ① 카드 제목이 그 상자의 «수사적 기능»  -- `The hook`은 논문을 파는 내부 용어다.
+    #      상자에 «든 것»을 제목으로 써야 한다. 닫힌 집합이라 register 무관하게 안전하다.
+    #   ② 기호로 쓴 말 -- 추정치 뒤 화살표. 글로 쓴다.
+    # ⚠️ 여기 «넣지 않은» 것과 그 이유:
+    #   · `≠`/`≈` -- 통계 덱에서는 정당한 수학 기호다. register 의존이라 DEFAULT에 안 맞는다.
+    #   · 경구형 대구("Rigorous analysis is the strength; the design is the ceiling") -- 판단이다.
+    #     정규식으로 박으면 정상적인 대조 문장을 죽인다.
+    #   · 문장 속 대문자 강조 -- 약어(NHANES·STROBE·TMLE)와 구분이 안 된다. 정규식 대신
+    #     아래 caps_emphasis()가 «덱 전체» 문맥으로 판정한다.
+    "rhetoric": r"^\s*(The\s+(hook|consequence|takeaway|upshot|punchline)|"
+                r"Key\s+point|Organizing\s+principle|Why\s+this\s+matters)\s*[:.]?\s*$|"
+                r"[↑↓]",
 }
+
+
+def caps_emphasis(paras):
+    """대문자 강조를 «덱 전체» 문맥으로 판정한다 -- 정규식만으로는 약어와 구분이 안 되기 때문.
+
+    신호: 같은 낱말이 이 덱 안에서 ALLCAPS로도 소문자로도 나온다면 그건 약어가 아니라 강조다.
+    NHANES·STROBE·TMLE 같은 진짜 약어는 소문자로 등장하는 일이 없다. 이 한 가지 대조가
+    «DEPLETES»(강조)와 «NHANES»(약어)를 갈라준다 -- 화이트리스트를 손으로 관리할 필요가 없다.
+
+    ⚠️ 그 대조만으로는 부족하다: 표 헤더는 설계상 ALLCAPS인 경우가 많아 «MEAN» 헤더 + 본문
+    «mean»이 오탐이 된다(셀프테스트를 쓰다 발견). 그래서 «문장 안»일 것을 함께 요구한다 --
+    강조는 문장 중간에 박히고, 헤더는 그 칸 전체다. 조건: 그 문단에 낱말이 4개 이상이고
+    소문자 낱말이 함께 있을 것.
+    """
+    lower, caps = set(), {}
+    for si, t in paras:
+        words = re.findall(r"\b[A-Za-z]{4,}\b", t)
+        in_sentence = len(t.split()) >= 4 and any(w.islower() for w in words)
+        for w in words:
+            if w.isupper():
+                if in_sentence:
+                    caps.setdefault(w.lower(), (si, w))
+            elif w.islower():
+                lower.add(w.lower())
+    return [("rhetoric-caps", si, w, "이 덱에 소문자 %r도 있다 -- 약어가 아니라 강조다" % w.lower())
+            for k, (si, w) in sorted(caps.items()) if k in lower]
 
 
 def paragraphs(path):
@@ -108,6 +155,8 @@ def main():
         hits += drift("Figure", a.max_fig)
     if a.max_tab is not None:
         hits += drift("Table", a.max_tab)
+    if "rhetoric" not in a.skip:
+        hits += caps_emphasis(paras)
 
     print("%s -- %d text blocks scanned" % (a.file, len(paras)))
     if not hits:
