@@ -65,9 +65,13 @@ DEFAULT = {
     #     정규식으로 박으면 정상적인 대조 문장을 죽인다.
     #   · 문장 속 대문자 강조 -- 약어(NHANES·STROBE·TMLE)와 구분이 안 된다. 정규식 대신
     #     아래 caps_emphasis()가 «덱 전체» 문맥으로 판정한다.
+    #   ③ `≠`/`≈`는 **양옆이 무엇이냐**로 가른다 -- 낱말 사이면 수사("Diversity ≠ composition"),
+    #      숫자·기호가 끼면 수학("p ≠ 0.05", "OR ≈ 1.4")이다. register 의존이라 못 넣는다고
+    #      2026-08-20에 한 번 판단했는데, 판별식이 있으니 넣을 수 있다.
     "rhetoric": r"^\s*(The\s+(hook|consequence|takeaway|upshot|punchline)|"
                 r"Key\s+point|Organizing\s+principle|Why\s+this\s+matters)\s*[:.]?\s*$|"
-                r"[↑↓]",
+                r"[↑↓]|"
+                r"\b[A-Za-z]{3,}\s*[≠≈]\s*[A-Za-z]{3,}\b",
 }
 
 
@@ -82,18 +86,36 @@ def caps_emphasis(paras):
     «mean»이 오탐이 된다(셀프테스트를 쓰다 발견). 그래서 «문장 안»일 것을 함께 요구한다 --
     강조는 문장 중간에 박히고, 헤더는 그 칸 전체다. 조건: 그 문단에 낱말이 4개 이상이고
     소문자 낱말이 함께 있을 것.
+
+    ⚠️ **소문자 쌍둥이가 없는 강조는 잡지 못한다** — "is NULL", "a robust COMPANION"이 그 예다.
+    2026-08-20에 «덱 전체에 한 번만 나온 ALLCAPS»를 [의심]으로 내는 방안을 넣어봤다가
+    **셀프테스트가 즉시 기각했다**: 현실적인 방법 슬라이드에서 NHANES·STROBE·TMLE 3개가
+    3개 다 걸렸다. 과잉표시가 아니라 전수표시다.
+    다른 판별식도 없다 — 약어와 영어 낱말을 사전 없이 가르는 값싼 방법이 없고, 접미사 규칙은
+    NHANES(-ES)에서 바로 깨진다. **그래서 확신 있는 신호 하나만 남긴다.** 놓치는 것을 알고
+    두는 편이, 약어마다 우는 게이트를 두는 것보다 낫다(그런 게이트는 곧 꺼지고 신호가 0이 된다).
+
+    ⚠️ 소문자 쪽도 «산문»이어야 한다(2026-08-20 추가). 이 대조를 덱 밖(원고·보고서)으로
+    넓히며 실측하니 소문자 짝의 정체가 URL·패키지명이었다 -- `https://…keis…`가 KEIS를,
+    R 패키지 `tmle`·`lasso`가 TMLE·LASSO를 «강조»로 만들었다. 코드·경로 문맥(백틱, URL,
+    밑줄·슬래시·점이 붙은 토큰)의 소문자는 그 낱말의 «영어 쓰임»이 아니므로 센서에서 뺀다.
+    같은 실측에서 MEDIAN("a single cutpoint at the MEDIAN")·SAME("fit on the SAME simulated
+    dataset")은 진짜 강조로 살아남았다 -- 판별식이 참을 죽이지 않는다는 확인.
     """
     lower, caps = set(), {}
     for si, t in paras:
         words = re.findall(r"\b[A-Za-z]{4,}\b", t)
         in_sentence = len(t.split()) >= 4 and any(w.islower() for w in words)
+        # 소문자 센서는 «산문»만 본다. 대문자 쪽은 원문 그대로 -- 강조는 백틱 안에 들어가지 않으므로
+        # 여기서 잘라내도 참을 잃지 않는다.
+        prose = re.sub(r"`[^`]*`|https?://\S+|\S*[_/\\-]\S*|\b\w+\.\w+\b", " ", t)
         for w in words:
             if w.isupper():
                 if in_sentence:
                     caps.setdefault(w.lower(), (si, w))
-            elif w.islower():
-                lower.add(w.lower())
-    return [("rhetoric-caps", si, w, "이 덱에 소문자 %r도 있다 -- 약어가 아니라 강조다" % w.lower())
+        for w in re.findall(r"\b[a-z]{4,}\b", prose):
+            lower.add(w)
+    return [("rhetoric-caps", si, w, "이 문서에 소문자 %r도 있다 -- 약어가 아니라 강조다" % k)
             for k, (si, w) in sorted(caps.items()) if k in lower]
 
 
