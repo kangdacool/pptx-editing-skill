@@ -172,6 +172,15 @@ python agent/tools/build_guard.py verify <산출물.pptx>   # 렌더 «직후»�
    blocks a save, the on-disk file changed since the last build — **someone may
    have hand-edited it.** Look before you clobber: back the file up, check what
    changed, and only then delete `<out>.build-md5` and rebuild.
+   **`python scripts/diff_pptx.py OLD.pptx NEW.pptx` is that "check what changed" step**
+   — it also takes `shipped.zip::inner/deck.pptx` when the only baseline you have is
+   inside a circulated archive. Run it a second time *after* folding their edits into
+   the script: the only differences left should be the ones you meant to introduce.
+   ⚠ **Compare paragraphs, not runs.** PowerPoint re-splits every paragraph into
+   word-level runs on save, so a run-level diff buries four real edits under ~600
+   spurious rows (measured). `diff_pptx.py` joins runs for you — do not hand-roll a
+   run-level comparison. Text-box *height* differences after someone merely opened the
+   file are usually PowerPoint shrink-wrapping the box, not an edit; the tool flags those.
 3. **A "do not rebuild" ban is a last resort, not a destination.** If the reason a
    deck is unsafe to rebuild is that the script can't reproduce some hand-added
    thing (native equations, a real SVG), the right fix is usually to fold that

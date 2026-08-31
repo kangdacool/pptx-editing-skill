@@ -77,6 +77,12 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   2회차 빌드부터 오차 0으로 수렴하고, 캐시는 프로젝트를 넘어 남는다. 늘어난 표가 있으면 exit 1.
 - **`scripts/ink_extent.py`** — 렌더된 PNG에서 «잉크가 실제로 닿은 범위»를 잰다. 좌표·XML 검사가
   통과시킨 넘침을 픽셀에서 잡는 마지막 관문.
+- **`scripts/diff_pptx.py`** — **덱 두 개가 무엇이 다른가.** 누군가 손으로 고친 덱을 덮어쓰기
+  «전에» 무엇이 바뀌었는지 보고, 그 수정을 빌드 스크립트에 옮긴 «뒤에» 제대로 옮겨졌는지
+  다시 확인한다. 기준본이 회람 zip 안에 있으면 `shipped.zip::inner/deck.pptx` 로 준다.
+  ⚠ **문단 단위로 비교한다 — run 단위로 하면 안 된다.** PowerPoint 는 저장할 때 문단을
+  낱말 단위 run 으로 다시 쪼개므로, 아무도 안 건드린 문단이 수십 건의 «변경»으로 나온다
+  (실측: 진짜 수정 4건이 헛것 600여 건에 묻혔다).
 - **`scripts/inspect_pptx.py`** — 슬라이드별 구조·텍스트·노트·오버플로 덤프.
 - **`scripts/render_pptx.py`** — PowerPoint COM으로 PDF→PNG 렌더링(시각 QA용).
   ⚠ `--pdf`만 주면 PNG는 만들지 않는다. 예전에는 원본 옆에 `<덱>_png/`를 «늘» 만들어서,
