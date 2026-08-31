@@ -52,9 +52,19 @@ from pptx.util import Cm, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+import hashlib
+import io
+import json
+import os
 import re
 
 DEFAULT_MIN_PT = 24
+
+# 텍스트 상자에 더하는 여유(cm). python-pptx 기본 상하 여백 0.05in x2 = 0.254cm + 줄높이 반올림.
+BOX_PAD_CM = 0.4
+
+# ⚠ 이 값을 «추정 오차를 덮는 안전마진»으로 쓰지 마라 -- 그러면 반환 높이가 실제 글자보다
+#   커져 빌드가 찍는 여백이 통째로 거짓말이 된다(2026-08-26, 최대 4cm).
 
 
 def pt2cm(pt):
@@ -82,22 +92,134 @@ def tb(sl, l, t, w, h, anchor=None):
     return x
 
 
+def _pk():
+    """옆에 있는 pptx_kit 을 불러온다 -- 폭 실측의 «정본»은 거기 하나뿐이어야 한다.
+
+    두 킷이 각자 복사본을 들면 언젠가 갈리고, 그때 어느 쪽이 참인지 알 방법이 없다.
+    """
+    import importlib.util
+    import os
+    import sys
+    if "pptx_kit" in sys.modules:
+        return sys.modules["pptx_kit"]
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pptx_kit.py")
+    spec = importlib.util.spec_from_file_location("pptx_kit", p)
+    m = importlib.util.module_from_spec(spec)
+    sys.modules["pptx_kit"] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+##################################################################
+#####  MEASURED-HEIGHT CACHE  #####
+##################################################################
+# PIL 폭 실측으로도 상자 높이는 «근사»다 -- CJK 금칙처리·커닝·자간을 재현할 수 없어서,
+# 긴 문단에서 한 줄이 갈리면 그대로 오차가 된다(2026-08-26 실측 잔차 1.4cm).
+#
+# 그런데 PowerPoint 는 정답을 알고 있다: `TextFrame2.TextRange.BoundHeight` 가 **실제로 그린
+# 텍스트 높이**다. 그래서 추정을 더 정교하게 만드는 대신 **되먹인다**:
+#
+#   1회차 빌드 -- 추정으로 그리고, 각 상자 이름에 `pk:<키해시>` 를 새긴다
+#   measure_boxes.py -- COM 1회로 BoundHeight 를 읽어 해시별 실측 높이를 캐시에 적는다
+#   2회차 빌드 -- 같은 해시를 찾아 **정확한 높이**를 쓴다. 오차 0.
+#
+# 캐시는 프로젝트 밖(`agent/cache/`)에 살아서 **다음 포스터·덱은 1회차부터 정확**하다.
+# 키가 높이를 결정하는 모든 것(문자열·폭·크기·간격·폰트·머리표·최소크기)을 담으므로
+# 프로젝트가 달라도 같은 키면 같은 높이다.
+# ⭐ 구현은 `pptx_kit` 에 «하나»만 둔다 -- 여기 사본을 들면 언젠가 갈리고, 그때 어느 쪽이
+#   참인지 알 방법이 없다(폭 실측에서 이미 겪은 일이다). 여기서는 «포스터 규약»만 덧입힌다.
+def box_key(kind, text, w_cm, size, **kw):
+    """포스터용 지문. `BOX_PAD_CM` 을 키에 포함시키는 것이 여기의 규약이다.
+
+    ⚠ 캐시가 담는 값이 «텍스트 높이 + 패드» 라서, 패드를 바꾸면 저장된 항목 전부가 조용히
+    그 차이만큼 틀린다. 키에 넣으면 자동으로 무효화된다.
+    """
+    return _pk().box_key(kind, text, w_cm, size, _pad=BOX_PAD_CM, **kw)
+
+
+def cached_height(key):
+    """실측 높이(cm) 또는 캐시 미스면 None."""
+    return _pk().cached_height(key)
+
+
+def cached_rows(key, n=None):
+    """표의 행별 실측 높이(cm). 행 수가 다르면 None -- 내용이 바뀐 것이다."""
+    return _pk().cached_rows(key, n)
+
+
+def cache_report():
+    return _pk().cache_report()
+
+
+CACHE_PATH = _pk().CACHE_PATH        # 정본은 pptx_kit -- 여기서는 이름만 빌려 쓴다
+
+
+def text_width_cm(txt, size, font="Arial", bold=False, _cache={}):
+    """한 줄로 놓았을 때의 **실제 렌더 폭(cm)**. 평균 문자폭으로 «추정»하지 않는다.
+
+    Arial 은 가변폭이라 같은 글자 수라도 폭이 크게 다르다("iii" vs "WWW"). 평균값으로
+    줄 수를 세면 상자 높이가 실제 글자보다 크거나 작게 나오고, 그 오차가 그대로 «여백»
+    계산에 실린다 -- 2026-08-26 teacher 포스터에서 빌드가 「여백 0.2cm」라고 찍은 판의
+    실제 여백이 4.3cm 였다. 폰트 메트릭으로 재면 그 오차가 사라진다.
+    (같은 기법이 `agent/tools/audit_table_widths.py` 에 이미 있었다 -- 킷만 안 쓰고 있었다.)
+
+    폰트 파일이 없는 환경에서는 옛 근사(라틴 0.52em / 굵게 0.60em / 한글 1.42em)로 떨어진다.
+    """
+    return _pk().text_width_in(txt, size, font, bold) * 2.54
+
+
 def est_lines(txt, w_cm, size, char_w_factor=0.52, pad_cm=0.0):
-    """Estimate wrapped line count for auto-sizing a textbox before drawing it.
+    """Wrapped line count for auto-sizing a textbox before drawing it.
+
+    ⭐ 2026-08-26 부터 «추정»이 아니라 **실측**이다 -- `text_width_cm()` 으로 단어를 하나씩
+    붙여 보며 실제 줄바꿈을 시뮬레이션한다. `char_w_factor` 는 하위호환으로 남아 있고,
+    0.56 이상이면 «굵은 글씨» 신호로만 쓴다(폭 계산에는 안 쓴다).
 
     char_w_factor is the average glyph width as a fraction of the em (point size). This differs
-    sharply by script — CALIBRATE, don't guess:
-      - Latin/English (Arial):  ~0.52-0.60 (narrower glyphs, more chars per line)
-      - Hangul:                 ~1.42       (roughly square glyphs, far fewer chars per line)
+    sharply by script AND by weight — CALIBRATE, don't guess (measured via PIL ImageFont
+    .getbbox() on the actual TTF, 2026-08-26 — see brush_cog SESSION_LOG that date for the
+    method if recalibrating for another font):
+      - Latin/English, regular (Arial):        ~0.52   (this default)
+      - Latin/English, BOLD (Arial Bold):       ~0.58-0.60 — meaningfully wider per character,
+        not just "a bit more". A short bold word (e.g. an 8-char button-style label) can wrap
+        when an equal- or longer-length regular-weight line right next to it does not, at the
+        SAME box width — this was mistaken for a box-width bug across several rebuild-render
+        cycles before the actual cause (weight, not width) was found by measuring glyph width
+        directly instead of iterating on renders. Pass char_w_factor≈0.6 for bold labels rather
+        than reusing the regular default.
+      - Hangul:                                 ~1.42   (roughly square glyphs, far fewer chars per line)
     Overestimating lines is the safe failure mode (extra whitespace, not a clipped line) — if
     unsure which way to round, round the factor UP.
+
+    ⚠ **`pad_cm` matters and defaults to 0.0, but `tb()` in this file does NOT zero out
+    python-pptx's own default text-frame margins** (0.1in left+right = ~0.508cm total, plus
+    top/bottom). Calling `est_lines(text, box_w, size, factor)` with the default `pad_cm=0.0`
+    will UNDER-predict wrapping for any box made with `tb()` — it will happily say "1 line"
+    for text that actually wraps to 2 once real margins eat into the usable width (verified
+    2026-08-26: this made a first calibration check look fine when the actual render still
+    wrapped). Pass `pad_cm=0.51` (or measure the real margin if a helper other than `tb()`
+    made the box) to get a prediction that matches what will actually render.
+
+    ⭐ Call this BEFORE drawing a text box whose fit is uncertain (short labels next to a
+    fixed-size image, e.g. a QR code) — check `est_lines(text, box_w, size, factor, pad_cm=0.51) == 1`
+    for the width you're about to use, rather than building the whole slide and rendering to
+    find out. A full rebuild+audit+render cycle costs far more than one function call, and
+    "guess a width, rebuild, look, adjust" is not a substitute for checking the one number
+    that actually determines wrapping.
     """
-    usable = max(w_cm - pad_cm, 1)
-    char_w = size / 72 * 2.54 * char_w_factor
-    per_line = max(int(usable / char_w), 1)
+    usable = max(w_cm - pad_cm, 0.1)
+    bold = char_w_factor is not None and char_w_factor >= 0.56
     n = 0
     for seg in txt.split("\n"):
-        n += max(1, -(-len(seg) // per_line))
+        cur, lines = "", 1
+        for word in seg.split(" "):
+            trial = word if not cur else cur + " " + word
+            if not cur or text_width_cm(trial, size, bold=bold) <= usable:
+                cur = trial
+            else:
+                lines += 1
+                cur = word
+        n += lines
     return n
 
 
@@ -146,9 +268,19 @@ def bullets(sl, items, l, t, w, ink, accent=None, size=27, gap=14, font="Arial",
     `accent` colour+bold — use this for AT MOST one bullet per section (module docstring #5), not as
     a general emphasis tool. Returns the total height (cm) consumed."""
     plain = [s.replace("**", "") for s in items]
-    total = sum(est_lines(s, w - 1.2, size, char_w_factor) for s in plain) * pt2cm(size) * 1.2 \
-        + len(items) * pt2cm(gap)
-    x = tb(sl, l, t, w, total + 1.0)
+    key = box_key("bullets", tuple(plain), w, size, gap=gap, font=font, mark=mark,
+                  min_pt=min_pt, indent=1.2)
+    total = cached_height(key)
+    if total is None:
+        total = sum(est_lines(s, w - 1.2, size, char_w_factor, pad_cm=0.51) for s in plain) \
+            * pt2cm(size) * 1.2 + len(items) * pt2cm(gap)
+        # 예전엔 +1.0cm 였다. 그 여유는 est_lines 가 «추정»이던 시절의 안전마진이었고, 그만큼
+        # 반환 높이가 실제 글자보다 커서 빌드가 찍는 여백이 최대 4cm 틀렸다(2026-08-26).
+        # 이제 폭을 실측하므로 python-pptx 텍스트 프레임의 실제 상하 여백(0.05in x2 = 0.254cm)만
+        # 덮으면 된다. 줄높이 반올림 여유를 조금 더해 0.4.
+        total += BOX_PAD_CM
+    x = tb(sl, l, t, w, total)
+    x.name = key
     tf = x.text_frame
     for i, s in enumerate(items):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
@@ -161,7 +293,7 @@ def bullets(sl, items, l, t, w, ink, accent=None, size=27, gap=14, font="Arial",
         for seg, bd in _spans(s2):
             col = accent if ((whole or bd) and accent) else ink
             kf(p.add_run(), size, col, bold=(whole or bd), font=font, min_pt=min_pt).text = seg
-    return total + 1.0
+    return total
 
 
 def caption(sl, txt, l, t, w, color, accent=None, size=24, font="Arial", char_w_factor=0.52,
@@ -173,8 +305,15 @@ def caption(sl, txt, l, t, w, color, accent=None, size=24, font="Arial", char_w_
     with no `**` in it renders as a single plain run, unchanged from before this parameter existed.
     """
     plain = txt.replace("**", "")
-    h = est_lines(plain, w, size, char_w_factor) * pt2cm(size) * 1.2 + 0.5
+    # ⚠ pad_cm 를 빠뜨리면 python-pptx 의 좌우 기본 여백(0.1in x2 = 0.508cm)을 무시하게 되어
+    #   «한 줄에 더 들어간다»고 낙관한다. est_lines 독스트링이 경고하던 바로 그 함정이고,
+    #   bullets() 는 지키는데 여기만 안 지키고 있었다(2026-08-26).
+    key = box_key("caption", plain, w, size, font=font, min_pt=min_pt)
+    h = cached_height(key)
+    if h is None:
+        h = est_lines(plain, w, size, char_w_factor, pad_cm=0.51) * pt2cm(size) * 1.2 + BOX_PAD_CM
     x = tb(sl, l, t, w, h)
+    x.name = key
     p = x.text_frame.paragraphs[0]
     for seg, bd in _spans(txt):
         col = accent if (bd and accent) else color
@@ -215,15 +354,26 @@ def ptable(sl, rows, l, t, w, widths, header_color, alt_color, white, ink, accen
     def row_height(rr):
         return max(rowh, max(cell_lines(v, col_w[j]) for j, v in enumerate(rr)) * line_h + 0.3)
 
-    row_heights = []
-    if title:
-        title_lines = est_lines(title, w, size + 2, char_w_factor, pad_cm=0.35)
-        row_heights.append(max(rowh, title_lines * pt2cm(size + 2) * 1.2 + 0.3))
-    row_heights += [row_height(rr) for rr in rows]
+    nrow = len(rows) + (1 if title else 0)
+    # ⭐ 실측 되먹임 (2026-08-27). est_lines 는 «근사»라 셀 하나가 예상보다 한 줄 더 접히면
+    #   반환 높이가 작아지고, 바로 아래 놓은 캡션이 표의 아래 선을 밟는다 -- 실제로 그랬다
+    #   (brush_cog KSEPI2026: 예측 14.00cm vs 실제 14.73cm). `audit_text_fit` 은 표를 못 보고
+    #   빌드 로그도 조용하다. `measure_boxes.py` 가 **행별** 실측을 캐시에 넣고, 2회차 빌드가
+    #   그걸 쓴다. 표는 총높이만으로는 행을 배치할 수 없어 «리스트»로 담는다.
+    key = box_key("ptable", tuple(tuple(str(c) for c in r) for r in rows), w, size,
+                  widths=tuple(widths), rowh=rowh, title=str(title or ""),
+                  font=font, min_pt=min_pt, cwf=char_w_factor)
+    row_heights = cached_rows(key, nrow)
+    if row_heights is None:
+        row_heights = []
+        if title:
+            title_lines = est_lines(title, w, size + 2, char_w_factor, pad_cm=0.35)
+            row_heights.append(max(rowh, title_lines * pt2cm(size + 2) * 1.2 + 0.3))
+        row_heights += [row_height(rr) for rr in rows]
     total_h = sum(row_heights)
 
-    nrow = len(rows) + (1 if title else 0)
     gt = sl.shapes.add_table(nrow, ncol, Cm(l), Cm(t), Cm(w), Cm(total_h))
+    gt.name = key
     tblx = gt.table
     for j, ww in enumerate(widths):
         tblx.columns[j].width = Cm(col_w[j])

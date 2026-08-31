@@ -294,15 +294,338 @@ def text_units(s):
     return sum(2 if ("가" <= ch <= "힣" or "ㄱ" <= ch <= "ㆎ") else 1 for ch in s)
 
 
-def wrapped_row_count(lines, wrap_units=50):
-    """Estimate total rendered rows for `lines` (each a paragraph/bullet string) once wrapped at
-    `wrap_units` half-width units per line. Use to pre-size a card/textbox height before drawing it,
-    so a two-line bullet doesn't get budgeted as one line and clip.
+_FONT_FILES = {
+    ("arial", False): r"C:\Windows\Fonts\arial.ttf",
+    ("arial", True): r"C:\Windows\Fonts\arialbd.ttf",
+    ("malgun gothic", False): r"C:\Windows\Fonts\malgun.ttf",
+    ("malgun gothic", True): r"C:\Windows\Fonts\malgunbd.ttf",
+    ("calibri", False): r"C:\Windows\Fonts\calibri.ttf",
+    ("calibri", True): r"C:\Windows\Fonts\calibrib.ttf",
+    ("consolas", False): r"C:\Windows\Fonts\consola.ttf",
+    ("consolas", True): r"C:\Windows\Fonts\consolab.ttf",
+}
 
-    wrap_units depends on the box width and font size in use -- calibrate per component (e.g. count
-    units in a known-good rendered line at that width/size), don't assume 50 fits every layout.
+# 한글 이름으로 지정된 폰트 -- PowerPoint 에서는 «맑은 고딕» 으로 쓰지만 파일명은 malgun 이다.
+# ⚠ 이 별칭이 없으면 조용히 옛 근사로 떨어진다(실측: "가나다라마바사 abc" 16pt 에서
+#    2.67in vs 실제 1.99in, 34% 과대추정). 예외도 경고도 없이 «값만» 틀리므로 눈치채기 어렵다.
+_FONT_ALIASES = {
+    "맑은 고딕": "malgun gothic",
+    "맑은고딕": "malgun gothic",
+    "굴림": "gulim",
+    "돋움": "dotum",
+    "바탕": "batang",
+}
+for _ko, _en in (("굴림", "gulim.ttc"), ("돋움", "dotum.ttc"), ("바탕", "batang.ttc")):
+    for _b in (False, True):
+        _FONT_FILES.setdefault((_FONT_ALIASES[_ko], _b), r"C:\Windows\Fonts\%s" % _en)
+
+
+def text_width_in(txt, size_pt, font="Arial", bold=False, _cache={}):
+    """한 줄로 놓았을 때의 **실제 렌더 폭(inch)** — 평균 문자폭으로 «추정»하지 않는다.
+
+    ⭐ 상자 높이를 미리 잡는 모든 계산의 바닥. 폭을 추정하면 그 오차가 그대로 «여백»에
+    실리고, 거기서 「빌드 -> 넘침 -> 줄임 -> 빌드 -> 여백 -> 키움」 루프가 시작된다.
+    2026-08-26 실사고: 포스터 빌드가 「여백 0.2cm」라 찍은 판의 실제 여백이 4.3cm 였고
+    그날 포스터를 25회 넘게 재빌드했다. 실측으로 바꾸니 오차가 0.2cm 가 됐다.
+
+    폰트 파일이 없으면 옛 근사(라틴 0.52em / 굵게 0.60em / 한중일 1.42em)로 떨어진다.
     """
+    name = _FONT_ALIASES.get(font.strip(), font).lower()
+    key = (name, bool(bold), round(size_pt, 2))
+    if key not in _cache:
+        try:
+            from PIL import ImageFont
+            path = _FONT_FILES.get((name, bool(bold)))
+            _cache[key] = ImageFont.truetype(path, int(round(size_pt * 4))) if path else None
+        except Exception:
+            _cache[key] = None
+    f = _cache[key]
+    if f is None:
+        em = size_pt / 72.0
+        wide = 0.60 if bold else 0.52
+        return sum(1.42 if ord(c) > 0x2E80 else wide for c in txt) * em
+    return f.getlength(txt) / (4 * 72.0)
+
+
+def wrapped_lines(txt, width_in, size_pt, font="Arial", bold=False):
+    """`width_in` 폭에서 실제로 몇 줄이 되는가 — 단어 단위 줄바꿈을 시뮬레이션한다."""
+    usable = max(width_in, 0.05)
+    n = 0
+    for seg in str(txt).split("\n"):
+        cur, lines = "", 1
+        for word in seg.split(" "):
+            trial = word if not cur else cur + " " + word
+            if not cur or text_width_in(trial, size_pt, font, bold) <= usable:
+                cur = trial
+            else:
+                lines += 1
+                cur = word
+        n += lines
+    return n
+
+
+def wrapped_row_count(lines, wrap_units=50, width_in=None, size_pt=None,
+                      font="Arial", bold=False):
+    """Total rendered rows for `lines` once wrapped. Pre-size a card/textbox before drawing it.
+
+    ⭐ **`width_in` 과 `size_pt` 를 주면 실측한다 — 그렇게 부르는 것이 기본이다.**
+    옛 방식(`wrap_units` 만 주기)은 「한글=2, 나머지=1」 근사에 손으로 보정한 상수를 나누는
+    것이라 레이아웃마다 다시 보정해야 했고, 그 보정을 «렌더를 보며» 하는 것이 곧 재빌드
+    시행착오였다(2026-08-26). 하위호환으로 남기지만 새 코드에서 쓰지 마라.
+    """
+    if width_in and size_pt:
+        return sum(wrapped_lines(ln, width_in, size_pt, font, bold) for ln in lines)
     return sum(1 + max(0, (text_units(ln) - 1) // wrap_units) for ln in lines)
+
+
+##################################################################
+#####  MEASURED-HEIGHT CACHE — 정본  #####
+##################################################################
+# 상자·표 높이를 «추정»하면 그 오차가 여백에 실리고 「빌드→넘침→줄임→빌드」 루프가 시작된다.
+# PIL 로 폭을 재도 근사는 남는다(CJK 금칙처리·커닝을 재현할 수 없다). PowerPoint 는 정답을
+# 안다 -- 그래서 추정을 더 정교하게 만드는 대신 **되먹인다**:
+#
+#   1회차 빌드 -- 추정으로 그리고, 도형 이름에 `pk:<키해시>` 를 새긴다
+#   measure_boxes.py -- COM 1회로 실측을 캐시에 적는다
+#   2회차 빌드 -- 같은 해시를 찾아 **정확한 값**을 쓴다. 오차 0.
+#
+# 저장되는 값의 «모양»이 대상을 구분한다:
+#   float  = 텍스트 상자 높이(cm, 프레임 여백 포함)
+#   list   = 표의 **행별** 높이(cm). 표는 총높이만으로는 행을 배치할 수 없다.
+# 캐시는 프로젝트 밖에 살아서 다음 포스터·덱은 1회차부터 정확하다.
+import hashlib as _hashlib
+import io as _io
+import json as _json
+import os as _os
+
+# Where the cache lives. Three tries, in order:
+#   1. PPTX_KIT_CACHE          -- explicit override wins.
+#   2. <skill>/../../../agent/cache  -- resolved from THIS file, so no machine path is
+#      baked in. In the lab checkout that lands on the shared cache; in a standalone
+#      install of this skill the directory does not exist and we fall through.
+#   3. ~/.cache/pptx-editing   -- portable default, created on first write.
+# ⚠ The old code hardcoded one author's absolute drive path as its fallback, so the cache
+#   only ever worked on a single machine -- and its first branch pointed two levels ABOVE
+#   the home directory, which exists nowhere. Silent failure: a cache miss just recomputes,
+#   so nobody noticed it had never worked for anyone else.
+_HERE = _os.path.dirname(_os.path.abspath(__file__))
+_LAB_CACHE = _os.path.normpath(_os.path.join(_HERE, "..", "..", "..", "..", "agent", "cache"))
+if _os.environ.get("PPTX_KIT_CACHE"):
+    CACHE_PATH = _os.environ["PPTX_KIT_CACHE"]
+elif _os.path.isdir(_LAB_CACHE):
+    CACHE_PATH = _os.path.join(_LAB_CACHE, "pptx_box_heights.json")
+else:
+    CACHE_PATH = _os.path.join(_os.path.expanduser("~"), ".cache", "pptx-editing",
+                               "pptx_box_heights.json")
+
+_HCACHE = None
+_HSTATS = {"hit": 0, "miss": 0}
+
+
+def _load_cache():
+    global _HCACHE
+    if _HCACHE is None:
+        try:
+            with _io.open(CACHE_PATH, encoding="utf-8") as f:
+                _HCACHE = _json.load(f)
+        except Exception:
+            _HCACHE = {}
+    return _HCACHE
+
+
+def box_key(kind, text, w_cm, size, **kw):
+    """높이를 결정하는 모든 입력의 지문. 하나라도 빠지면 캐시가 «조용히» 거짓말을 한다.
+
+    호출자는 렌더 높이에 영향을 주는 것을 **전부** kw 로 넘겨야 한다 -- 여백·간격·머리표·
+    최소글자크기까지. 특히 상수를 나중에 바꿀 생각이라면 그 상수도 키에 넣어라.
+    """
+    payload = repr((kind, text, round(float(w_cm), 4), float(size),
+                    tuple(sorted((k, v) for k, v in kw.items()))))
+    return "pk:" + _hashlib.md5(payload.encode("utf-8")).hexdigest()[:12]
+
+
+def cached(key):
+    """실측값(float=상자 높이cm · list=표 행높이cm) 또는 캐시 미스면 None."""
+    v = _load_cache().get(key)
+    _HSTATS["hit" if v is not None else "miss"] += 1
+    return v
+
+
+def cached_height(key):
+    v = cached(key)
+    return v if isinstance(v, (int, float)) else None
+
+
+def cached_rows(key, n=None):
+    """표의 행별 실측 높이. `n` 을 주면 행 수가 맞을 때만 돌려준다(내용이 바뀌면 무효)."""
+    v = cached(key)
+    if not isinstance(v, list):
+        return None
+    if n is not None and len(v) != n:
+        return None
+    return list(v)
+
+
+def cache_report():
+    """빌드 끝에 찍는다 -- 미스가 남아 있으면 그만큼 «아직 추정»이라는 뜻이다."""
+    n = _HSTATS["hit"] + _HSTATS["miss"]
+    if not n:
+        return "높이 캐시: 사용 안 함"
+    return ("높이 캐시: %d/%d 실측 (%.0f%%)%s"
+            % (_HSTATS["hit"], n, 100.0 * _HSTATS["hit"] / n,
+               "" if not _HSTATS["miss"] else "  -- measure_boxes.py 로 나머지를 재고 다시 빌드"))
+
+
+##################################################################
+#####  TABLES — a real table, not textboxes pretending  #####
+##################################################################
+# 왜 이 함수가 필요한가 (2026-08-27)
+# ---------------------------------
+# 랩의 덱 빌더들은 표를 «진짜 표»가 아니라 **셀마다 텍스트박스 + 가로줄 도형**으로 그려 왔다
+# (예: 선택교과4 `ppt_common.table_slide`). 이유는 셋이고, 둘은 정당했다:
+#
+#   ① python-pptx 에는 셀 «테두리» API 가 없다. 채우기는 한 줄이지만 선은 a:lnL/R/T/B XML 을
+#      손으로 써야 한다. 그런데 학술 표의 표준 서식은 **선만 있고 채우기가 없는 것**이라,
+#      하필 python-pptx 가 못 하는 게 우리가 늘 원하는 서식이었다.
+#      (`poster_kit.ptable` 은 이 문제를 «테두리를 안 쓰고 줄무늬 채우기로» 피해 갔다.
+#       포스터에선 통하지만 강의·발표 덱의 학술 표에는 안 통한다.)
+#   ② 진짜 표는 템플릿의 표 스타일을 상속한다 — 원치 않는 띠 색·테마 폰트·테두리가 딸려 온다.
+#   ③ 그리고 진짜 이유: **여기에 표 헬퍼가 없었다.** 그래서 덱마다 각자 만들었고, 완전한
+#      통제가 가장 쉬운 방법이 텍스트박스였다. 설계가 아니라 표류다.
+#
+# 텍스트박스 표가 치르는 대가 (모두 실측·확인됨)
+# ----------------------------------------------
+#   • **셀이 줄바꿈되면 아래 행을 «밀지 않고 겹친다».** 모든 행이 고정 높이라서다. 진짜 표는
+#     PowerPoint 가 그 행을 늘려 밀어낸다(음성대조 실측: 지정 1.20cm -> 실제 2.54cm, +1.34cm).
+#     `ptable` 독스트링이 「한 빌드에 세 번 독립적으로 터졌다」고 적어둔 그 결함이다.
+#   • **감사 도구가 못 본다.** `shape.has_table` 을 도는 수치 검증기는 가짜 표를 통째로
+#     통과시킨다 — 가짜 표를 쓰면 «어떤 감사가 적용되는지»가 조용히 바뀐다.
+#   • 손으로 행 하나를 넣으면 아래 전부를 다시 배치해야 한다. 진짜 표는 흐른다.
+#
+# 그래서 이 함수는 ①을 한 번만 제대로 풀어(테두리 XML) 나머지를 전부 되찾는다.
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+# a:tcPr 자식의 «스키마 순서». 순서를 어기면 PowerPoint 가 파일을 복구 모드로 연다.
+_TC_ORDER = ("lnL", "lnR", "lnT", "lnB", "lnTlToBr", "lnBlToTr", "cell3D", "fill",
+             "headers", "extLst")
+
+
+def _q(tag):
+    return "{%s}%s" % (_A_NS, tag)
+
+
+def _cell_borders(cell, top=None, bottom=None, left=None, right=None, color="000000"):
+    """셀 테두리를 «네 변 모두» 명시한다. None = 선 없음(noFill).
+
+    ⚠ 원하지 않는 변도 반드시 `noFill` 로 명시해야 한다. 비워 두면 템플릿 표 스타일의
+    테두리가 그대로 비쳐 나온다 -- 「세로선을 안 그렸는데 세로선이 있다」의 원인이 이것이다.
+    """
+    from lxml import etree
+    tc = cell._tc
+    tcPr = tc.find(_q("tcPr"))
+    if tcPr is None:
+        tcPr = etree.SubElement(tc, _q("tcPr"))
+        tc.remove(tcPr)
+        tc.insert(len(tc), tcPr)      # tcPr 는 a:tc 의 «마지막» 자식이다
+    for tag in ("lnL", "lnR", "lnT", "lnB"):
+        old = tcPr.find(_q(tag))
+        if old is not None:
+            tcPr.remove(old)
+    want = {"lnL": left, "lnR": right, "lnT": top, "lnB": bottom}
+    for tag in ("lnL", "lnR", "lnT", "lnB"):
+        pt = want[tag]
+        ln = etree.Element(_q(tag))
+        ln.set("cap", "flat")
+        ln.set("cmpd", "sng")
+        ln.set("algn", "ctr")
+        if pt:
+            ln.set("w", str(int(round(pt * 12700))))
+            fill = etree.SubElement(ln, _q("solidFill"))
+            etree.SubElement(fill, _q("srgbClr")).set("val", color)
+        else:
+            etree.SubElement(ln, _q("noFill"))
+        # 스키마 순서를 지켜 끼워 넣는다
+        idx = 0
+        for child in tcPr:
+            name = etree.QName(child).localname
+            if name in _TC_ORDER and _TC_ORDER.index(name) < _TC_ORDER.index(tag):
+                idx += 1
+            else:
+                break
+        tcPr.insert(idx, ln)
+
+
+def dtable(slide, rows, left_in, top_in, width_in, col_frac, ink, size_pt=14,
+           font="Arial", header=True, rule_color="404040", rule_top=1.5,
+           rule_head=1.0, rule_bottom=1.5, rule_row=0.0, align=None,
+           row_pad_in=0.10, min_row_in=0.28, name=None):
+    """학술 서식(선만, 채우기 없음)의 **진짜 표**. 실제 높이(inch)를 돌려준다.
+
+    rows[0] 은 `header=True` 면 머리행이다. 셀 문자열이 `**` 로 시작하면 그 셀만 굵게.
+    `col_frac` 은 열 폭의 «비율»(합이 1일 필요 없다). `align` 은 열별 PP_ALIGN 리스트,
+    생략하면 첫 열만 왼쪽·나머지 가운데(수치표의 관례).
+
+    행 높이는 `wrapped_lines()` 로 **재서** 정한다 -- 고정 높이로 두면 긴 셀이 행을 넘치고,
+    PowerPoint 가 그 행만 늘려서 «호출자가 받은 높이»가 거짓이 된다. 그래도 최종 진실은
+    `measure_boxes.py` 가 COM 으로 읽는 실제 높이다(행 자동확장은 정적 검사로 안 보인다).
+    """
+    from pptx.util import Cm, Emu
+    n_row, n_col = len(rows), len(col_frac)
+    tot = float(sum(col_frac))
+    col_w = [width_in * f / tot for f in col_frac]
+    line_in = size_pt * 1.2 / 72.0
+
+    def cell_h(r):
+        n = 1
+        for j, v in enumerate(r):
+            txt = v[2:] if str(v).startswith("**") else str(v)
+            # 셀 좌우 여백(기본 0.1in x2)을 빼야 «실제로» 몇 줄인지 나온다
+            n = max(n, wrapped_lines(txt, max(col_w[j] - 0.2, 0.1), size_pt, font,
+                                     bold=(header and r is rows[0]) or str(v).startswith("**")))
+        return max(min_row_in, n * line_in + row_pad_in)
+
+    heights = [cell_h(r) for r in rows]
+    gf = slide.shapes.add_table(n_row, n_col, Inches(left_in), Inches(top_in),
+                                Inches(width_in), Inches(sum(heights)))
+    tbl = gf.table
+    # 템플릿 표 스타일의 «띠»를 끈다. 이걸 안 끄면 채우기를 지워도 첫 행이 색을 갖는다.
+    tbl.first_row = False
+    tbl.horz_banding = False
+    tbl.first_col = False
+    tbl.vert_banding = False
+
+    for j, w in enumerate(col_w):
+        tbl.columns[j].width = Emu(int(round(w * 914400)))
+    for i, h in enumerate(heights):
+        tbl.rows[i].height = Emu(int(round(h * 914400)))
+
+    for i, r in enumerate(rows):
+        is_head = header and i == 0
+        for j in range(n_col):
+            c = tbl.cell(i, j)
+            c.fill.background()                     # 채우기 없음 -- 학술 표의 기본
+            c.margin_left = c.margin_right = Inches(0.10)
+            c.margin_top = c.margin_bottom = Inches(0.02)
+            _cell_borders(
+                c, color=rule_color,
+                top=(rule_top if i == 0 else (rule_row or None)),
+                bottom=(rule_head if is_head else
+                        (rule_bottom if i == n_row - 1 else (rule_row or None))),
+                left=None, right=None)              # 세로선 없음 -- 명시적으로 끈다
+            raw = str(r[j]) if j < len(r) else ""
+            bold = is_head or raw.startswith("**")
+            txt = raw[2:] if raw.startswith("**") else raw
+            p = c.text_frame.paragraphs[0]
+            p.alignment = (align[j] if align else
+                           (PP_ALIGN.LEFT if j == 0 else PP_ALIGN.CENTER))
+            run = p.add_run()
+            run.text = txt
+            run.font.size = Pt(size_pt)
+            run.font.bold = bold
+            run.font.name = font
+            run.font.color.rgb = ink
+    if name:
+        gf.name = name
+    return sum(heights)
 
 
 def check_surface_leaks(prs, terms):

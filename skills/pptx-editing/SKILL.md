@@ -33,6 +33,134 @@ PowerPoint shows notes fine. The fix is to inject a body placeholder into the
 notes slide (`pptx_kit.speaker_note` does this). Don't conclude "impossible";
 check the assumption.
 
+## 빌드 루프 — 재빌드로 레이아웃을 «찾지» 마라 (덱·포스터 공통)
+
+2026-08-26 에 포스터 하나를 **25회 넘게** 재빌드했다. 대부분이 「빌드 → 넘쳤네 → 줄이고 →
+빌드 → 남네 → 키우고」였다. 원인은 판단력이 아니라 **상자 높이를 «추정»으로 잡았던 것**이다.
+
+```
+1. 숫자로 먼저 맞춘다   pptx_kit.text_width_in() / wrapped_lines()  — 그리기 «전에» 부른다
+                        (포스터는 poster_kit.text_width_cm() / est_lines(), 같은 구현)
+2. 빌드 1회             python <build>.py
+3. 렌더 1회             render_pptx.py
+4. 실측 1회             ink_extent.py <pptx>   — 실제 잉크가 어디서 끝나나
+5. 눈으로 1회           크롭해서 본다
+```
+
+**빌드는 «검증»이지 «탐색»이 아니다.** 폭·줄 수가 궁금하면 `text_width_in()` 한 번이
+빌드+렌더 한 바퀴보다 훨씬 싸다. 「대충 넣고 렌더해서 보자」를 반복하면 그날이 재현된다.
+
+**⚠ 상자 높이를 «추정»하지 마라 — 폭은 잴 수 있다.** 두 킷 모두 그 죄가 있었다:
+`poster_kit.est_lines` 는 평균 문자폭(0.52em), `pptx_kit.wrapped_row_count` 는 「한글=2,
+나머지=1」에 **레이아웃마다 손으로 보정하는 `wrap_units`** 를 썼다. 그 보정을 «렌더를 보며»
+하는 것이 곧 재빌드 시행착오다. 2026-08-26 에 둘 다 **PIL 폰트 메트릭 실측 + 단어 단위
+줄바꿈 시뮬레이션**으로 바꿨다(정본은 `pptx_kit.text_width_in`, poster_kit 은 그걸 부른다).
+포스터 여백 오차가 **4.1cm → 0.2cm** 가 됐다.
+`wrapped_row_count(lines, width_in=..., size_pt=...)` 로 부르면 실측 경로다 — **그게 기본**이고,
+`wrap_units` 만 주는 옛 호출은 하위호환일 뿐이다.
+
+**⭐ 그래도 실측이 «근사»인 이유, 그리고 그걸 없애는 법.** PIL 로 폭을 재도 CJK 금칙처리·
+커닝·자간까지는 재현할 수 없어서 긴 문단에서 한 줄이 갈린다(잔차 1.4cm). **PowerPoint 는
+정답을 안다** — `TextFrame2.TextRange.BoundHeight` 가 실제로 그린 텍스트 높이다. 추정을 더
+정교하게 만드는 대신 **되먹인다**:
+
+```
+python <build>.py                        # 1회차: 추정으로 그린다 (상자 이름에 키를 새긴다)
+python measure_boxes.py <out.pptx>       # COM 1회로 BoundHeight 를 캐시에 적는다
+python <build>.py                        # 2회차: 캐시를 써서 «정확»하다
+python measure_boxes.py <out.pptx> --dry-run    # 검산: 「수렴」이 뜨는지 본다
+```
+
+**결정론적으로 2회에 수렴한다**(2026-08-26 teacher 포스터 실측: 1회차 최대 0.64cm·합계
++0.49cm → 2회차 **0.00cm**). 도형 이름이 `pptx_kit.box_key()` 해시라서 COM 이 텍스트를
+다시 맞춰볼 필요가 없다 — **이름이 곧 키다**. 캐시는 프로젝트 밖
+(`agent/cache/pptx_box_heights.json`)에 살아서 **다음 포스터·덱은 1회차부터 정확**하다.
+
+**표도 캐시에 든다**(2026-08-27). `bullets`·`caption` 뿐 아니라 `ptable`·`dtable` 이 같은
+루프를 탄다. 다만 저장되는 값의 «모양»이 다르다 — 상자는 **float(총높이 cm)**, 표는
+**list(행별 높이 cm)** 다. 표는 총높이만으로는 행을 배치할 수 없기 때문이다.
+검증 사례: brush_cog KSEPI2026 Table 2 가 예측 14.00cm / 실제 **14.73cm**(+0.73)로 캡션이
+표의 아래 선을 밟고 있었다 — 되먹인 뒤 2회차 0.00cm. **`audit_text_fit` 은 이걸 못 본다**
+(표에는 도형 수준 TextFrame 이 없다). 표 아래에 무언가를 이어 놓는다면 이 루프가 유일한 보증이다.
+
+⚠ **COM 으로 표를 읽을 때 `Rows(r).Height` 가 「전부 0.000」 이면 속성이 아니라 «수명»을
+의심하라.** 반복문 안에서 `app.Quit()` 을 부르면 다음 회차의 `Dispatch` 가 죽은 인스턴스를
+잡고, 그 뒤 모든 읽기가 0 이나 「Object does not exist」 로 나온다. 앱은 **하나만 열고 맨
+마지막에 닫는다**. 제대로 열면 늘어난 행도 늘어난 값으로 정확히 읽힌다(실측 0.600 → 1.778).
+
+**빌드 끝에 `PK.cache_report()` 를 찍어라.** 「9/9 실측 (100%)」이 아니면 그 미스만큼 여백
+보고가 «추정»이고, 그 오차가 열 끝 y 에 그대로 실린다. 이 한 줄이 없으면 다음 세션은 빌드가
+찍은 여백을 참으로 믿는다 — 그게 4.3cm 틀렸던 그 사고다.
+
+**`ink_extent.py` 는 여전히 마지막 관문이다.** 캐시가 100% 여도 상자 높이와 «잉크» 끝은
+다르다(마지막 상자의 아래 여백만큼). 캐시는 «레이아웃 산술이 참인가», ink_extent 는
+«눈에 보이는 여백이 얼마인가» — 다른 질문이다. 실측 예: 빌드 4.1cm vs 잉크 5.5cm.
+
+**여백이 남으면 글을 늘려 메우지 않는다.** 내용을 더 넣거나 그림을 키운다. 포스터는
+3cm 이상 남으면 「할 말이 없다」로 읽힌다(`poster_rules` §0·§1).
+
+## COM 렌더 뒤에는 산출물이 바뀌어 있을 수 있다 — md5 를 확인하라
+
+`render_pptx.py` 는 PowerPoint 를 띄운다. 그 PowerPoint 가 파일을 저장해 버리는 사고가
+**2026-08-26 하루에 두 번** 났다: 표·그림·푸터가 두 벌씩 복제된 pptx 가 만들어졌고
+(도형 48개, 같은 좌표 중복 11쌍), **PDF·PNG 는 깨끗했으므로 렌더를 보는 검사로는 안 잡혔다.**
+그대로 보냈으면 인쇄물이 겹쳐 나온다.
+
+```
+python agent/tools/build_guard.py verify <산출물.pptx>   # 렌더 «직후»에
+```
+
+빌드가 `guard()`/`stamp()` 를 쓰고 있으면 이 한 줄이면 된다. 어긋나면 **재빌드**가 정답이다
+— 중복 도형을 손으로 지우지 마라(무엇이 지워졌는지 확인할 방법이 없다).
+
+## 표는 «진짜 표»로 만든다 — 텍스트박스로 흉내내지 마라 (덱·포스터 공통)
+
+랩의 덱 빌더들은 표를 셀마다 텍스트박스 + 가로줄 도형으로 그려 왔다(예: 선택교과4
+`ppt_common.table_slide`). 이유가 셋인데 **둘은 정당했고 하나는 표류**다:
+
+① **python-pptx 에는 셀 테두리 API 가 없다.** 채우기는 한 줄인데 선은 `a:lnL/R/T/B` XML 을
+손으로 써야 한다. 그런데 학술 표의 표준은 **선만 있고 채우기가 없는 것**이라, 하필 못 하는 게
+늘 원하는 서식이었다. (`poster_kit.ptable` 은 «테두리를 안 쓰고 줄무늬 채우기»로 피해 갔다 —
+포스터엔 통하지만 학술 표에는 안 통한다.)
+② 진짜 표는 템플릿 표 스타일을 상속한다 — 띠 색·테마 폰트·테두리가 딸려 온다.
+③ **그리고 진짜 이유: 헬퍼가 없었다.** 그래서 덱마다 각자 만들었고, 통제가 쉬운 쪽이
+텍스트박스였다.
+
+**`pptx_kit.dtable()` 이 ①을 한 번만 제대로 풀어 놓았으므로 이제 흉내낼 이유가 없다.**
+진짜 `add_table` + 학술 서식(가로 3선, 세로선 없음, 채우기 없음) + 행 높이 실측.
+
+**흉내낸 표가 치르는 대가:**
+- ⚠ **셀이 줄바꿈되면 아래 행을 «밀지 않고 겹친다».** 모든 행이 고정 높이라서다. 진짜
+  표는 PowerPoint 가 그 행을 늘려 밀어낸다(음성대조 실측: 지정 1.20 → 실제 2.54cm).
+- **감사가 못 본다.** `shape.has_table` 을 도는 수치 검증기는 가짜 표를 통째로 통과시킨다 —
+  가짜 표를 쓰면 «어떤 감사가 적용되는지»가 조용히 바뀐다.
+- 손으로 행을 하나 넣으면 아래 전부를 다시 배치해야 한다. 진짜 표는 흐른다.
+
+**표가 늘어났는지는 `measure_boxes.py` 가 잡는다.** ⚠ 비교 대상을 틀리기 쉽다 — PowerPoint 는
+행을 늘리면서 «행 높이도 같이» 갱신하므로, 열어 본 뒤에는 행합 == 전체높이라 **언제나
+일치한다**. 참인 비교는 **파일에 적힌 값(python-pptx) vs 렌더된 값(COM)** 이다.
+⚠ 그리고 두 판본을 맞출 때 **`shape_id` 는 슬라이드 안에서만 고유하다** — 키에 슬라이드
+번호를 안 넣으면 덱에서 서로 다른 도형이 같은 칸을 덮어써 거짓 양성이 쏟아진다. 1슬라이드
+포스터에서는 절대 안 드러나고 덱에서만 나온다(2026-08-27, 실제로 11건을 오보고했다).
+
+**XML 을 직접 쓰는 함수라 조용히 깨진다.** `a:tcPr` 자식의 스키마 순서를 어기면 PowerPoint 가
+복구 모드로 열고, 원치 않는 변에 `noFill` 을 안 쓰면 템플릿 스타일의 세로선이 비쳐 나온다.
+둘 다 `selftest.py::test_dtable` 이 지킨다 — `dtable` 을 고치면 그걸 돌려라.
+
+## 값 대조는 «누락»을 못 본다 — 수치가 실린 모든 pptx 산출물
+
+포스터 수치를 원본 CSV와 1:1 대조하는 스크립트를 만들어 **32/32 통과**를 받고 "보내도
+되나"라고 물었다. 그런데 심사자 감사가 잡은 결함은 하나도 그 검증에 안 걸렸다:
+
+- CSV 에 있는데 표에서 **빠진 행**(탈락자 수, 역치 초과 %) — 값 대조는 «있는 값»만 본다
+- **분모가 사라진 것**(`% (n)` 로 바꾸며 파고별 N 을 날림) — 남은 값들은 다 맞았다
+- 한 열에 대해 **거짓인 행 라벨**(비교군의 가해자가 「학생·보호자」일 리 없다)
+- **자료 창을 넘는 주장**(마지막 파고가 2023 인데 결론이 "after 2023")
+
+**값이 맞는 것과 표가 참인 것은 다른 명제다.** 값 대조 뒤에 반드시 물을 것:
+① CSV 에 있는데 안 실은 행이 있나 ② 각 열 라벨이 «그 열»에 대해 참인가
+③ 각 주장이 자료가 덮는 기간·집단 안에 있나 ④ 분모가 보이나.
+
 ## Two rules that protect the user's work
 
 1. **A rebuild regenerates the whole .pptx from your script — it WIPES anything
@@ -253,7 +381,7 @@ diff the returned XML, then re-render every deck and compare.
 
 | Script | Purpose |
 |---|---|
-| `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
+| `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), **`dtable`** (학술 서식의 **진짜 표** — 가로 3선·세로선 없음·채우기 없음, 행 높이는 `wrapped_lines` 로 실측. 표를 텍스트박스로 흉내내지 않게 해주는 함수이니 표가 필요하면 여기부터), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
 | `inspect_pptx.py FILE` | Structure + notes + **overflow** dump. First thing to run on any deck. |
 | `audit_text_fit.py FILE [--all]` | Asks PowerPoint how big the text really is and flags only text that runs **off-slide** or **onto another text/picture**. Exit 1 on a hit, so a build can gate. **A textbox does not clip — it spills**, and spilling over a background fill is normal layering; treating either as an error makes the check cry wolf (two earlier cuts of this script did exactly that, 3/3 false on a clean deck). |
 | `audit_surface_text.py FILE [--max-fig N] [--max-tab N]` | «있으면 안 되는 말»이 남았는지 기계로 훑는다 — 편집 해명·내비게이션 안내·재진술 신호·내부 파일명, 그리고 **번호 drift**(산출물엔 Figure가 3개인데 캡션에 "Figure 9"가 남은 경우). `audit_text_fit.py`가 «글자가 넘치는가»를 본다면 이건 «내용이 표면에 남았는가»를 본다. exit 1이라 빌드 게이트로 쓸 수 있다. 사람 눈으로 훑는 방식은 반복해서 실패한다. |
@@ -261,6 +389,8 @@ diff the returned XML, then re-render every deck and compare.
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |
 | `poster_kit.py` | Palette-agnostic mechanics for **large-format academic posters** (cm-scale canvas, not a 16:9 slide) — `two_col_grid`, `sectitle`, `bullets`/`caption`/`ptable` (all with an enforced minimum legible font size via `kf`), `pic_cm` (width-locked, no silent shrink-below-floor), `min_font_report` (catches text that bypassed `kf`). See guide §12 before building a poster — the 2-column-not-3, one-accent-color, narrative-caption habits it encodes. |
 | `poster_kit_selftest.py` | Proves `poster_kit`'s font-floor enforcement and grid math without a real poster project. |
+| `ink_extent.py FILE [--cols ...]` | 렌더에서 **열별 «실제» 잉크 끝**을 잰다. 빌드가 찍는 여백은 상자 기준이라 실제와 다를 수 있다(2026-08-26: 0.2 vs 4.3cm). `.pptx` 를 주면 캔버스를 읽고 렌더를 찾거나 만들고, 머리글·푸터 «띠»를 자동 배제한다. 「여백이 남았나/빡빡한가/두 열이 균형인가」는 이걸로 판정한다 — `audit_text_fit.py`(겹침·이탈)와 축이 다르다. |
+| `measure_boxes.py FILE [--dry-run]` | **PowerPoint 가 실제로 그린 텍스트 높이**(`BoundHeight`)를 COM 1회로 걷어 캐시(`agent/cache/pptx_box_heights.json`)에 적는다. 킷이 도형 이름에 새긴 `pk:<해시>` 가 키라 텍스트를 다시 맞출 필요가 없다. 빌드→측정→빌드로 **오차 0 에 결정론적 2회 수렴**. `--dry-run` 은 캐시를 안 쓰고 오차만 본다(검산용). **표는 «행별» 높이를 캐시에 담고**(값이 리스트), 별도로 «행 자동확장»도 검사한다 — 늘어난 표가 있으면 exit 1(빌더가 받은 높이가 거짓이고 그 아래가 이미 겹쳤다는 뜻). 읽기 전용(`ReadOnly=True`)이지만 뒤에 `build_guard.py verify` 를 권한다. |
 
 **Shared lab tools this skill leans on** (in `agent/tools/`, already cross-project):
 `build_guard.py` (md5 overwrite guard + stamp), `flowchart_generator.py`

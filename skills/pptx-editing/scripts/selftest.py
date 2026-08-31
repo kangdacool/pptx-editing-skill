@@ -85,6 +85,54 @@ def main():
     print("PASS  speaker_note round-trips on a placeholder-less notes master; "
           "overflows() and hang() work.")
 
+def test_dtable():
+    """dtable() 이 «진짜 표»를 만들고, 학술 서식(세로선 없음)을 실제로 강제하는가.
+
+    XML 을 손으로 쓰는 함수라 조용히 깨지기 쉽다 — a:tcPr 자식의 스키마 순서를 어기면
+    PowerPoint 가 복구 모드로 열고, noFill 을 빠뜨리면 템플릿 표 스타일의 세로선이 비쳐 나온다.
+    """
+    from lxml import etree
+    from pptx.dml.color import RGBColor
+    from pptx_kit import dtable, _q, _TC_ORDER
+
+    prs = Presentation()
+    sl = prs.slides.add_slide(prs.slide_layouts[6])
+    rows = [["Variable", "n", "OR (95% CI)"],
+            ["A cell long enough that it must wrap at this narrow column width", "12",
+             "1.23 (0.98-1.56)"],
+            ["**Total", "34", "**2.10 (1.4-3.1)"]]
+    h = dtable(sl, rows, 0.5, 0.5, 6.0, [3, 1, 2], RGBColor(0, 0, 0), size_pt=12,
+               name="pk:selftest")
+
+    tbl = [s for s in sl.shapes if s.has_table][0].table
+    assert len(tbl.rows) == 3 and len(tbl.columns) == 3, "표 크기가 다르다"
+
+    # 줄바꿈되는 행은 «다른 행보다 높아야» 한다 — 고정 높이면 그 셀이 아래 행을 덮는다
+    hs = [r.height for r in tbl.rows]
+    assert hs[1] > hs[0], "줄바꿈되는 행의 높이를 재지 않았다 (고정 높이로 되돌아갔다)"
+    assert abs(h - sum(hs) / 914400.0) < 1e-6, "반환 높이가 행 합과 다르다"
+
+    for i in range(3):
+        for j in range(3):
+            tcPr = tbl.cell(i, j)._tc.find(_q("tcPr"))
+            assert tcPr is not None, "tcPr 가 없다"
+            names = [etree.QName(c).localname for c in tcPr]
+            known = [n for n in names if n in _TC_ORDER]
+            assert known == sorted(known, key=_TC_ORDER.index), \
+                "a:tcPr 자식 순서가 스키마와 다르다 — PowerPoint 가 복구 모드로 연다: %s" % names
+            # 세로선은 «명시적으로» 꺼야 한다. 비워 두면 템플릿 스타일이 비쳐 나온다.
+            for side in ("lnL", "lnR"):
+                ln = tcPr.find(_q(side))
+                assert ln is not None and ln.find(_q("noFill")) is not None, \
+                    "세로선을 명시적으로 끄지 않았다 (%s, 셀 %d,%d)" % (side, i, j)
+    assert tbl.cell(0, 0)._tc.find(_q("tcPr")).find(_q("lnT")).find(_q("solidFill")) is not None, \
+        "표 상단 선이 없다"
+    assert tbl.cell(2, 0)._tc.find(_q("tcPr")).find(_q("lnB")).find(_q("solidFill")) is not None, \
+        "표 하단 선이 없다"
+    print("PASS  dtable(): 진짜 표 · 행 높이를 잼 · 세로선 명시적 차단 · tcPr 스키마 순서 유지.")
+
+
 if __name__ == "__main__":
     main()
     test_text_and_leak_mechanics()
+    test_dtable()

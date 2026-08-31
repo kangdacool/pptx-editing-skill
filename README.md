@@ -71,8 +71,16 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   강제, 폭 고정 이미지 배치, `min_font_report`) — 16:9 슬라이드가 아닌 cm 단위 벽보용.
   `ptable`이 돌려주는 높이는 `행높이 × 행수`가 아니라 **셀이 실제로 줄바꿈된 것을 반영한 참값**이라,
   표 바로 밑에 놓은 캡션이 렌더에서 마지막 행에 겹치지 않는다.
+- **`scripts/measure_boxes.py`** — **PowerPoint가 실제로 그린 텍스트 높이를 걷어 캐시에 적는다.**
+  상자 높이를 «추정»하면 그 오차가 여백에 실려 「빌드→넘침→줄임→빌드」 루프가 시작된다. PIL 실측도
+  근사다(CJK 금칙처리·커닝을 재현할 수 없다). COM의 `TextFrame2.TextRange.BoundHeight`를 되먹이면
+  2회차 빌드부터 오차 0으로 수렴하고, 캐시는 프로젝트를 넘어 남는다. 늘어난 표가 있으면 exit 1.
+- **`scripts/ink_extent.py`** — 렌더된 PNG에서 «잉크가 실제로 닿은 범위»를 잰다. 좌표·XML 검사가
+  통과시킨 넘침을 픽셀에서 잡는 마지막 관문.
 - **`scripts/inspect_pptx.py`** — 슬라이드별 구조·텍스트·노트·오버플로 덤프.
 - **`scripts/render_pptx.py`** — PowerPoint COM으로 PDF→PNG 렌더링(시각 QA용).
+  ⚠ `--pdf`만 주면 PNG는 만들지 않는다. 예전에는 원본 옆에 `<덱>_png/`를 «늘» 만들어서,
+  압축해 배포하는 폴더에서 부르면 그 PNG가 그대로 딸려 나갔다.
 - **`scripts/audit_text_fit.py`** — PowerPoint COM으로 실측한 텍스트 크기 기준 오버플로/겹침 감사.
 - **`scripts/audit_surface_text.py`** — 편집 해명·내비게이션 안내·재진술·Figure/Table 번호 drift를
   기계로 훑는다. 빌드 게이트로 쓸 수 있게 exit 1.
