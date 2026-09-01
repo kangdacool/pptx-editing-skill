@@ -90,6 +90,14 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 - **`scripts/audit_text_fit.py`** — PowerPoint COM으로 실측한 텍스트 크기 기준 오버플로/겹침 감사.
 - **`scripts/audit_surface_text.py`** — 편집 해명·내비게이션 안내·재진술·Figure/Table 번호 drift를
   기계로 훑는다. 빌드 게이트로 쓸 수 있게 exit 1.
+- **`scripts/audit_image_dpi.py`** — **그림이 «놓인 크기»에 견줘 충분히 선명한가.**
+  `실효 DPI = 가로 픽셀 / 놓인 인치`. 파일은 멀쩡한데 넓게 놓아서 흐린 경우를 잡는다 —
+  한 장씩 보면 다 그럴듯하고 덱 전체를 세워 놓고 견줘야 뒤처지는 장이 나온다
+  (실측: 183·189·210·243·262 사이에 혼자 121). 종횡비 비틀림도 함께 본다.
+- **`scripts/web_shot.py`** — 웹 페이지를 **슬라이드에 놓을 크기에 맞춰** 찍는다(headless Chrome).
+  `--slide-width 7.6 --min-dpi 200` 을 주면 필요한 device scale factor 를 «계산»한다.
+  좌표는 CSS px 이라 배율을 바꿔도 유효하고, 찍힌 폭이 기대와 다르면 멈춘다 — 배율만 올리고
+  원본을 다시 안 찍으면 엉뚱한 데를 조용히 자르기 때문이다.
 - **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — 실제 템플릿 없이 각각
   `speaker_note`의 왕복(쓰기→저장→재열기→읽기)과 `poster_kit`의 폰트 최솟값·그리드 계산을 증명.
 
@@ -154,6 +162,16 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
 - **`scripts/audit_text_fit.py`** — overflow/overlap audit using PowerPoint-measured text size.
 - **`scripts/audit_surface_text.py`** — machine sweep for editing-process leakage, navigation asides,
   restated text, and figure/table number drift. Exits 1, so it can gate a build.
+- **`scripts/audit_image_dpi.py`** — **is each picture sharp enough for the size it is placed at?**
+  `effective DPI = pixel width / placed inches`. Catches images that are fine as files but soft on
+  the slide because they were placed wide. One at a time they all look plausible; only lining the
+  whole deck up shows the outlier (measured: 121 among 183·189·210·243·262). Also flags squashed
+  aspect ratios (what you get by setting both `width` and `height`).
+- **`scripts/web_shot.py`** — capture a web page **at the size it will occupy on the slide**
+  (headless Chrome). Give it `--slide-width 7.6 --min-dpi 200` and it *computes* the device scale
+  factor. Crop/box coordinates are in CSS px, so they stay valid when the scale changes; if the shot
+  does not come out at the expected width it stops, because raising the scale without re-shooting
+  silently crops the wrong region.
 - **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — prove `speaker_note`'s round-trip
   (write → save → reopen → read) and `poster_kit`'s font-floor/grid math respectively, with no real
   template or poster project needed.

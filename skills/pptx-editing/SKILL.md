@@ -47,6 +47,11 @@ check the assumption.
 5. 눈으로 1회           크롭해서 본다
 ```
 
+**그림이 있는 덱이면 여기에 한 줄 더 — `audit_image_dpi.py <pptx>`.** 흐린 그림은 눈으로
+넘어가고 «투사했을 때» 보인다. 한 장씩 보면 다 그럴듯하고, 덱 전체를 «세워 놓고 견줘야»
+어느 장이 뒤처지는지 나온다(실측: 183·189·210·243·262 사이에 혼자 **121**). 새로 찍을
+때는 반대 방향으로 — `web_shot.py --slide-width <놓을 인치>` 가 배율을 «계산»해서 찍는다.
+
 **빌드는 «검증»이지 «탐색»이 아니다.** 폭·줄 수가 궁금하면 `text_width_in()` 한 번이
 빌드+렌더 한 바퀴보다 훨씬 싸다. 「대충 넣고 렌더해서 보자」를 반복하면 그날이 재현된다.
 
@@ -398,6 +403,8 @@ diff the returned XML, then re-render every deck and compare.
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |
 | `poster_kit.py` | Palette-agnostic mechanics for **large-format academic posters** (cm-scale canvas, not a 16:9 slide) — `two_col_grid`, `sectitle`, `bullets`/`caption`/`ptable` (all with an enforced minimum legible font size via `kf`), `pic_cm` (width-locked, no silent shrink-below-floor), `min_font_report` (catches text that bypassed `kf`). See guide §12 before building a poster — the 2-column-not-3, one-accent-color, narrative-caption habits it encodes. |
 | `poster_kit_selftest.py` | Proves `poster_kit`'s font-floor enforcement and grid math without a real poster project. |
+| `audit_image_dpi.py FILE [--min N]` | 그림이 **놓인 크기에 견줘** 충분한 해상도인지 잰다 — `실효 DPI = 가로 픽셀 / 놓인 인치`. 파일 자체는 멀쩡한데 «넓게 놓아서» 흐린 경우를 잡는다(실측: 한 덱에서 네 장은 183~262 인데 한 장만 **121**). 1920px 프로젝터가 13.33in 슬라이드를 쏘면 144 DPI 가 한계라 기본 문턱은 150, 인쇄물이면 `--min 220`. **종횡비 비틀림**도 같이 본다(`width` 와 `height` 를 둘 다 주면 그림이 눌린다). ⚠ 그림 «안»에 구워진 글자가 낡았는지는 못 본다 — 그건 캡처 소스를 따로 대조한다. |
+| `web_shot.py URL OUT` | 웹 페이지를 **슬라이드에 놓을 크기에 맞춰** 찍는다(headless Chrome). `--slide-width 7.6 --min-dpi 200` 을 주면 **필요한 device scale factor 를 계산**해서 찍는다 — 눈대중으로 배율을 정하면 그림마다 DPI 가 제각각이 된다. 좌표(`--crop`, `--box`)는 **CSS px** 이라 배율을 바꿔도 그대로 유효하다(뷰포트가 고정이므로 레이아웃이 안 변한다). 찍힌 폭이 기대와 다르면 «멈춘다» — 배율만 올리고 원본을 다시 안 찍으면 엉뚱한 데를 조용히 자른다. ⚠ 페이지가 개편되면 좌표가 어긋나므로 **결과 PNG 를 반드시 눈으로** 볼 것. |
 | `ink_extent.py FILE [--cols ...]` | 렌더에서 **열별 «실제» 잉크 끝**을 잰다. 빌드가 찍는 여백은 상자 기준이라 실제와 다를 수 있다(2026-08-26: 0.2 vs 4.3cm). `.pptx` 를 주면 캔버스를 읽고 렌더를 찾거나 만들고, 머리글·푸터 «띠»를 자동 배제한다. 「여백이 남았나/빡빡한가/두 열이 균형인가」는 이걸로 판정한다 — `audit_text_fit.py`(겹침·이탈)와 축이 다르다. |
 | `measure_boxes.py FILE [--dry-run]` | **PowerPoint 가 실제로 그린 텍스트 높이**(`BoundHeight`)를 COM 1회로 걷어 캐시(`agent/cache/pptx_box_heights.json`)에 적는다. 킷이 도형 이름에 새긴 `pk:<해시>` 가 키라 텍스트를 다시 맞출 필요가 없다. 빌드→측정→빌드로 **오차 0 에 결정론적 2회 수렴**. `--dry-run` 은 캐시를 안 쓰고 오차만 본다(검산용). **표는 «행별» 높이를 캐시에 담고**(값이 리스트), 별도로 «행 자동확장»도 검사한다 — 늘어난 표가 있으면 exit 1(빌더가 받은 높이가 거짓이고 그 아래가 이미 겹쳤다는 뜻). 읽기 전용(`ReadOnly=True`)이지만 뒤에 `build_guard.py verify` 를 권한다. |
 

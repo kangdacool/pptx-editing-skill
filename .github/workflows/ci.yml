@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+# ⚠ Run each selftest as its OWN step (one process each). Calling several from a
+#   single process gives false failures — selftest.py closes stdout when it finishes,
+#   so whatever runs after it reports a bogus FAIL (measured 2026-08-31).
 jobs:
   selftest:
     runs-on: ubuntu-latest
@@ -16,5 +19,15 @@ jobs:
           python-version: "3.12"
       - name: Install deps
         run: pip install python-pptx Pillow lxml
-      - name: Run selftest (proves speaker_note round-trips on a placeholder-less notes master)
+      - name: speaker_note round-trips on a placeholder-less notes master
         run: python skills/pptx-editing/scripts/selftest.py
+      - name: poster_kit — font floor + grid math
+        run: python skills/pptx-editing/scripts/poster_kit_selftest.py
+      - name: audit_surface_text — banned phrases + figure-number drift
+        run: python skills/pptx-editing/scripts/audit_surface_text_selftest.py
+      - name: diff_pptx — run-splitting ignored, real edits caught
+        run: python skills/pptx-editing/scripts/diff_pptx.py --selftest
+      - name: audit_image_dpi — soft and squashed images caught
+        run: python skills/pptx-editing/scripts/audit_image_dpi.py --selftest
+      - name: web_shot — scale math + CSS-px crop (browser part self-skips)
+        run: python skills/pptx-editing/scripts/web_shot.py --selftest
