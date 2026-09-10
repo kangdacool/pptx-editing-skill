@@ -21,6 +21,17 @@ if hasattr(sys.stdout, "buffer"):
 PP_PDF = 32   # ppSaveAsPDF
 PP_PNG = 18   # ppSaveAsPNG (exports every slide as a PNG into a folder)
 
+# ⚠ SaveAs(ppSaveAsPDF) applies PowerPoint's screen profile and downsamples large embedded
+# images: measured on a 90x140cm poster, a figure embedded at 5080px (316 dpi at its placed
+# size) came back at 3208px (200 dpi); a 2680px one was left alone, so the cap behaves like a
+# ~3200px per-image ceiling rather than a fixed ppi. ExportAsFixedFormat(..., Intent=print)
+# is the documented fix and it is NOT reachable here: late-bound Dispatch rejects it
+# ("The Python instance can not be converted to a COM object" with kwargs, "형식이 일치하지
+# 않습니다" with all-positional args) and gencache.EnsureDispatch refuses ("can not automate
+# the makepy process"). Don't re-add a --print-quality flag without first getting makepy to
+# run. In practice 200 dpi at final size clears the usual 150-dpi large-format floor, and
+# text/rules stay vector - so keep source figures under ~3200px if exact dpi matters.
+
 def via_com(path, pdf, png_dir):
     import win32com.client
     app = win32com.client.Dispatch("PowerPoint.Application")

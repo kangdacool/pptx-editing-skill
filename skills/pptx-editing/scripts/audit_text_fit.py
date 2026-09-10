@@ -102,12 +102,37 @@ def main():
     a = ap.parse_args()
 
     sw, sh_, slides = measure(a.deck)
-    offslide, collide, spill = [], [], []
+    offslide, collide, spill, offcenter = [], [], [], []
 
     for si, shapes in slides:
         for s in shapes:
             if s["tw"] is None:
                 continue
+            # ── 배경 «칸» 안에서 세로로 쏠린 라벨 ──────────────────────────────
+            # 2026-09-09: 단계 체인의 칸 높이를 0.86 → 0.50in 로 줄였더니 라벨이 아래로
+            # 쏠렸다. 슬라이드 밖도 아니고 다른 «내용»과 겹치지도 않아 위 두 검사에 안
+            # 걸렸고, 사용자가 PowerPoint 에서 손으로 올려 고쳤다(그 손편집은 다음 빌드에
+            # 지워진다). 신호는 「글자가 자기 배경 칸 안에서 위아래 여백이 다르다」다.
+            # ⚠ 좁게 잡는다 — 작은 «칩·배지» 모양(높이 ≤1.2in, 슬라이드의 8% 미만)에
+            #   완전히 들어앉은 라벨만 본다. 큰 상자 안의 위쪽 정렬은 정상 설계다.
+            for c in shapes:
+                if c is s or c["tw"] is not None or c["is_pic"] or c["is_tbl"]:
+                    continue                      # 글자·그림·표가 아닌 «칠해진 칸»만
+                if c["h"] > 1.2 or c["w"] * c["h"] > 0.08 * sw * sh_:
+                    continue
+                inside = (s["l"] >= c["l"] - a.tol and s["t"] >= c["t"] - a.tol
+                          and s["l"] + s["w"] <= c["l"] + c["w"] + a.tol
+                          and s["t"] + s["h"] <= c["t"] + c["h"] + a.tol)
+                if not inside:
+                    continue
+                gap_top = s["t"] - c["t"]
+                gap_bot = (c["t"] + c["h"]) - (s["t"] + s["th"])
+                # ⚠ 「가운데가 아니다」로 잡으면 시끄럽다 — 실측: 콘솔 블록(짧은 한 줄이
+                #   높은 상자 안에 top 정렬)과 «이미 가운데 정렬한» 상자까지 10건이 떴다.
+                #   판정은 «칸 밖으로 나갔는가»다. 그것만이 눈에 보이는 결함이다.
+                if gap_bot < -0.01 or gap_top < -0.01:
+                    offcenter.append((si, s, c, gap_top, gap_bot))
+                break
             # region the text really occupies (text is left/top anchored in these decks)
             t_r, t_b = s["l"] + s["tw"], s["t"] + s["th"]
             grew = s["th"] > s["h"] + a.tol or s["tw"] > s["w"] + a.tol
@@ -149,6 +174,15 @@ def main():
         for si, s, o in collide:
             print(f"  슬{si:3d} {s['name'][:22]:22s} → {o['name'][:22]:22s}  "
                   f"{s['txt'].replace(chr(13),' / ')[:40]}")
+
+    if offcenter:
+        print(f"\n[의심] 라벨이 자기 배경 칸 밖으로 나갔습니다 {len(offcenter)}건")
+        for si, s, c, gt, gb in offcenter[:12]:
+            print(f"  슬{si:3d} {s['name'][:20]:20s} in {c['name'][:16]:16s} "
+                  f"위 {gt:+.2f} / 아래 {gb:+.2f}in  "
+                  f"{s['txt'].replace(chr(13),' ')[:28]}")
+        print("     상자를 칸 전체로 두고 세로 가운데 정렬(MSO_ANCHOR.MIDDLE)하면 칸 높이가 "
+              "바뀌어도 맞는다.")
 
     if a.all and spill:
         print(f"\n[참고] 박스보다 커진 텍스트 {len(spill)}건 — PowerPoint는 자르지 않으므로 "

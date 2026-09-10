@@ -282,7 +282,16 @@ python agent/tools/build_guard.py verify <산출물.pptx>   # 렌더 «직후»�
    It dispatches on **genre, not file extension** — a conference poster, a lab-meeting deck and a
    talk deck are all `.pptx` but want different font floors and different surface rules (a meeting
    deck *should* print `출처: x.csv`; a poster should not). It prints the genre it inferred and
-   why; override with `--genre poster|slide|meeting`.
+   why; override with `--genre poster|slide|meeting|class`.
+
+   ⭐ **`class` = a deck handed to students.** Two things differ from a talk deck: internal
+   filenames are legitimate (students must type `sample_1500B.csv`), and the leak that actually
+   happens is the *operational register* — the TA's or instructor's own words left on the student's
+   screen ("시험 출제 범위", "두 줄이면 과제에 필요한 값이 다 나온다", "서식에는 학번·이름 칸이
+   없다"). 2026-09-09: 11 review comments on one deck, 4 of them this one thing. Say it aloud or
+   put it in the speaker notes; the slide surface carries content only. Better still, gate the
+   builder so the file cannot be saved with it — worked example: `deck_style.BANNED_SURFACE` +
+   `save_deck()` in `2026-2기의통/build/`, with `test_surface_gate.py` proving it blocks and passes.
 
    It dispatches to `audit_text_fit.py` and `audit_surface_text.py` from this skill plus
    `deck_audit.py` (XML referential integrity), `deck_render_audit.py` (rendered-pixel table

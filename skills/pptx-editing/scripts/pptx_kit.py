@@ -13,6 +13,14 @@ concludes notes are impossible — the fix is to inject the placeholder; see spe
 Nothing here references a colour or font: callers pass those in. Keep it that way so it stays shared.
 Import path: this file lives in the `pptx-editing` skill's scripts/; add that dir to sys.path.
 """
+# 표 폭은 «한 계산»을 셋이 나눠 쓴다 — docx·pptx·hwpx.
+# 계산은 같은 폴더의 col_widths.py — 정본은 docx-editing 이고 여기 «복사본»을 둔다
+# (스킬 하나만 받아도 동작해야 한다: ops3 공개 조건 1 자족성)
+import os as _os, sys as _sys
+_CW = _os.path.dirname(_os.path.abspath(__file__))
+if _CW not in _sys.path:
+    _sys.path.insert(0, _CW)
+from col_widths import content_col_widths  # noqa: E402
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN
@@ -554,7 +562,7 @@ def _cell_borders(cell, top=None, bottom=None, left=None, right=None, color="000
         tcPr.insert(idx, ln)
 
 
-def dtable(slide, rows, left_in, top_in, width_in, col_frac, ink, size_pt=14,
+def dtable(slide, rows, left_in, top_in, width_in, col_frac=None, ink=None, size_pt=14,
            font="Arial", header=True, rule_color="404040", rule_top=1.5,
            rule_head=1.0, rule_bottom=1.5, rule_row=0.0, align=None,
            row_pad_in=0.10, min_row_in=0.28, name=None):
@@ -568,6 +576,11 @@ def dtable(slide, rows, left_in, top_in, width_in, col_frac, ink, size_pt=14,
     PowerPoint 가 그 행만 늘려서 «호출자가 받은 높이»가 거짓이 된다. 그래도 최종 진실은
     `measure_boxes.py` 가 COM 으로 읽는 실제 높이다(행 자동확장은 정적 검사로 안 보인다).
     """
+    if col_frac is None:
+        # 폭을 안 주면 «내용량 비례»로 — docx·hwpx 와 같은 계산(2026-09-09).
+        _cm = content_col_widths([[str(c) for c in r] for r in rows], 16.0,
+                                 max(len(r) for r in rows))
+        col_frac = [x / sum(_cm) for x in _cm]
     from pptx.util import Cm, Emu
     n_row, n_col = len(rows), len(col_frac)
     tot = float(sum(col_frac))
