@@ -177,6 +177,16 @@ def m_sup(base_xml, sup_t):
             f'<m:e>{base_xml}</m:e><m:sup>{m_run(sup_t)}</m:sup></m:sSup>')
 
 
+def m_delim(inner_xml, beg="(", end=")"):
+    """Auto-sizing delimiters: (…) [ ] { } | |. The brackets grow with their content.
+
+    Plain "(" / "[" runs stay text-height, so a squared or fractional argument pokes out of them
+    and the formula reads as broken. Nearly every real formula needs this, so it belongs next to
+    m_frac/m_sub/m_sup — it was written twice in separate deck builders before being lifted here."""
+    return (f'<m:d><m:dPr><m:begChr m:val="{beg}"/><m:endChr m:val="{end}"/>'
+            f'{_MATH_CTRLPR}</m:dPr><m:e>{inner_xml}</m:e></m:d>')
+
+
 def m_nary(e_xml, chr_="∑"):
     """N-ary operator (Σ, Π, ∫, ...) with limits hidden (bare-symbol style)."""
     return (f'<m:nary><m:naryPr><m:chr m:val="{chr_}"/><m:limLoc m:val="undOvr"/>'

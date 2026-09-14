@@ -98,8 +98,15 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   `--slide-width 7.6 --min-dpi 200` 을 주면 필요한 device scale factor 를 «계산»한다.
   좌표는 CSS px 이라 배율을 바꿔도 유효하고, 찍힌 폭이 기대와 다르면 멈춘다 — 배율만 올리고
   원본을 다시 안 찍으면 엉뚱한 데를 조용히 자르기 때문이다.
-- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — 실제 템플릿 없이 각각
-  `speaker_note`의 왕복(쓰기→저장→재열기→읽기)과 `poster_kit`의 폰트 최솟값·그리드 계산을 증명.
+- **`scripts/deck_mono.py`** — 발표덱용 «흑백» 스타일 한 벌(`cover`·`section`·`content`·
+  `bullets`·`card`·`table`·`code`·`picture`). 기계 규격은 `pptx_kit` 이 지고 여기엔 색과 문법만
+  둔다. 덱에 색을 쓰지 않는 이유는 **논문 원본 그림이 원색으로 들어오기 때문**이다 — 덱에도
+  색이 있으면 충돌하고 청중이 색을 «의미»로 읽는다. 강조는 한 색뿐이고 덱당 한둘만 쓴다.
+  영문 덱이면 `set_font("Arial")` — 모듈 전역을 직접 바꾸면 일부 헬퍼만 따라와 더 나빠진다.
+- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** / **`scripts/deck_mono_selftest.py`**
+  / **`scripts/audit_surface_text_selftest.py`** — 실제 템플릿 없이 각각 `speaker_note` 의
+  왕복(쓰기→저장→재열기→읽기), `poster_kit` 의 폰트 최솟값·그리드 계산, `deck_mono` 의 글꼴
+  전파·그림자 제거, 표면 문구 검사기의 정밀도를 증명.
 
 ### 라이선스
 
@@ -172,9 +179,16 @@ python skills/pptx-editing/scripts/render_pptx.py deck.pptx
   factor. Crop/box coordinates are in CSS px, so they stay valid when the scale changes; if the shot
   does not come out at the expected width it stops, because raising the scale without re-shooting
   silently crops the wrong region.
-- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** — prove `speaker_note`'s round-trip
-  (write → save → reopen → read) and `poster_kit`'s font-floor/grid math respectively, with no real
-  template or poster project needed.
+- **`scripts/deck_mono.py`** — one black-and-white deck style (`cover`, `section`, `content`,
+  `bullets`, `card`, `table`, `code`, `picture`). `pptx_kit` carries the mechanics; this file holds
+  only colour and grammar. The deck stays monochrome because **the figures you paste into a talk
+  arrive in full colour** — a coloured deck fights them, and the audience starts reading the deck's
+  colour as meaning. One accent colour, once or twice per deck. For an English deck call
+  `set_font("Arial")`; rebinding the module global directly leaves half the helpers behind.
+- **`scripts/selftest.py`** / **`scripts/poster_kit_selftest.py`** / **`scripts/deck_mono_selftest.py`**
+  / **`scripts/audit_surface_text_selftest.py`** — prove `speaker_note`'s round-trip (write → save →
+  reopen → read), `poster_kit`'s font-floor/grid math, `deck_mono`'s font propagation and shadow
+  removal, and the surface-text auditor's precision, with no real template or project needed.
 
 ### License
 
