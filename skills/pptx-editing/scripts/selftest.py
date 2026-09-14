@@ -132,7 +132,52 @@ def test_dtable():
     print("PASS  dtable(): 진짜 표 · 행 높이를 잼 · 세로선 명시적 차단 · tcPr 스키마 순서 유지.")
 
 
+def test_tag_korean_runs():
+    """한글 run 에만, 도형·표 칸·그룹 안까지 lang="ko-KR" 이 붙는가. save_and_check 도 붙이는가.
+
+    태그가 빠지면 PowerPoint 가 한글을 음절 중간에서 줄바꿈한다(guide §5) — 렌더로만 보이는
+    결함이라 여기서 XML 로 지킨다."""
+    from pptx.util import Inches
+    from pptx_kit import tag_korean_runs
+
+    def _lang(run):
+        rPr = run._r.find("{http://schemas.openxmlformats.org/drawingml/2006/main}rPr")
+        return None if rPr is None else rPr.get("lang")
+
+    prs = new_deck()
+    sl = prs.slides.add_slide(blank_slide_layout(prs))
+    p = sl.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(4), Inches(1)).text_frame.paragraphs[0]
+    r_ko = p.add_run(); r_ko.text = "표본 크기 산정 근거"
+    r_en = p.add_run(); r_en.text = " n = 120 "
+    tbl = sl.shapes.add_table(1, 2, Inches(0.5), Inches(2), Inches(4), Inches(0.5)).table
+    tbl.cell(0, 0).text = "120명"; tbl.cell(0, 1).text = "n"
+    grp = sl.shapes.add_group_shape()
+    grp.shapes.add_textbox(Inches(5), Inches(0.5), Inches(3), Inches(1)).text_frame.text = "그룹 안 한글"
+
+    n = tag_korean_runs(prs)
+    assert n == 3, f"한글 run 3개(본문·표 칸·그룹)여야 한다, got {n}"
+    assert _lang(r_ko) == "ko-KR" and _lang(r_en) is None, "한글 run 에만 붙어야 한다"
+    assert _lang(tbl.cell(0, 0).text_frame.paragraphs[0].runs[0]) == "ko-KR", "표 칸이 빠졌다"
+    assert _lang(tbl.cell(0, 1).text_frame.paragraphs[0].runs[0]) is None
+    g_run = list(grp.shapes)[0].text_frame.paragraphs[0].runs[0]
+    assert _lang(g_run) == "ko-KR", "그룹 안 도형이 빠졌다"
+
+    prs2 = new_deck()
+    s2 = prs2.slides.add_slide(blank_slide_layout(prs2))
+    s2.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(4), Inches(1)).text_frame.text = "저장 게이트"
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, "ko.pptx")
+        save_and_check(prs2, out)
+        # 기본 템플릿엔 빈 레이아웃이 없어 제목 placeholder 가 먼저 온다 — 글상자를 텍스트로 찾는다
+        box = [sh for sh in Presentation(out).slides[0].shapes
+               if sh.has_text_frame and sh.text_frame.text == "저장 게이트"][0]
+        run = box.text_frame.paragraphs[0].runs[0]
+        assert _lang(run) == "ko-KR", "save_and_check 가 태그를 붙이지 않았다"
+    print("PASS  tag_korean_runs(): 한글 run 에만 · 표 칸·그룹 포함 · save_and_check 경유 저장본에 남음.")
+
+
 if __name__ == "__main__":
     main()
     test_text_and_leak_mechanics()
     test_dtable()
+    test_tag_korean_runs()

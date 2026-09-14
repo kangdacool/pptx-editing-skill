@@ -16,7 +16,7 @@ Import path: this file lives in the `pptx-editing` skill's scripts/; add that di
 # 표 폭은 «한 계산»을 셋이 나눠 쓴다 — docx·pptx·hwpx.
 # 계산은 같은 폴더의 col_widths.py — 정본은 docx-editing 이고 여기 «복사본»을 둔다
 # (스킬 하나만 받아도 동작해야 한다: ops3 공개 조건 1 자족성)
-import os as _os, sys as _sys
+import os as _os, sys as _sys, re as _re
 _CW = _os.path.dirname(_os.path.abspath(__file__))
 if _CW not in _sys.path:
     _sys.path.insert(0, _CW)
@@ -681,6 +681,48 @@ def check_surface_leaks(prs, terms):
     return hits
 
 
+_HANGUL_RE = _re.compile(r"[ㄱ-ㆎ가-힣]")
+
+
+def _text_frames(shapes):
+    """도형·표 칸·그룹 안 도형의 text_frame 을 전부 낸다."""
+    from pptx.shapes.group import GroupShape
+    for sh in shapes:
+        if isinstance(sh, GroupShape):
+            yield from _text_frames(sh.shapes)
+            continue
+        if sh.has_text_frame:
+            yield sh.text_frame
+        if getattr(sh, "has_table", False):
+            for row in sh.table.rows:
+                for c in row.cells:
+                    yield c.text_frame
+
+
+def tag_korean_runs(prs):
+    """한글이 든 run 에 lang="ko-KR"(altLang="en-US") 을 붙인다. 반환 = 붙인 run 수.
+
+    python-pptx 는 run 에 언어를 적지 않는다. 그러면 PowerPoint 가 한글을 영어 문맥으로 줄바꿈해
+    「하였/다」「연구/자」처럼 음절 중간에서 끊는다. ko-KR 이 붙은 run 은 같은 상자에서 어절 단위로
+    넘어간다(2026-09-14 COM 렌더 실측 — altLang 유무는 무관). latinLnBrk 로는 못 고친다: 1 로 두면
+    한글은 그대로 끊기고 「120명」이 「1/20명」으로 쪼개진다. 렌더로만 보이는 결함이다.
+
+    저장 직전에 «한 번» 부른다 — 도형·표를 만드는 함수가 여럿이라 각자 붙이게 하면 하나는 빠진다.
+    한글이 없는 run 은 건드리지 않는다(영문 덱에서는 0 을 반환하고 아무것도 안 바뀐다).
+    """
+    n = 0
+    for sl in prs.slides:
+        for tf in _text_frames(sl.shapes):
+            for p in tf.paragraphs:
+                for r in p.runs:
+                    if _HANGUL_RE.search(r.text or ""):
+                        rPr = r._r.get_or_add_rPr()
+                        rPr.set("lang", "ko-KR")
+                        rPr.set("altLang", "en-US")
+                        n += 1
+    return n
+
+
 def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
     """Save + gate on surface leaks and boundary overflow in one call. Raises SystemExit (does not
     write a "saved" log line the caller can mistake for success) if either check fails -- a deck
@@ -688,8 +730,9 @@ def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
 
     Reuses `overflows()` per-slide (same tolerance as everywhere else in this module) rather than a
     second boundary check with different math, so there is one definition of "overflowing," not two
-    that can disagree.
+    that can disagree. Tags Korean runs first (`tag_korean_runs`) so wrapping is by word.
     """
+    tag_korean_runs(prs)
     prs.save(path)
     leaks = check_surface_leaks(prs, leak_terms or [])
     overflow_hits = []

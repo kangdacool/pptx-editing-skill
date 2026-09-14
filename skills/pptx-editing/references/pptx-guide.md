@@ -16,6 +16,8 @@
 6. **Windows 콘솔에서 `print`가 UnicodeEncodeError** — em-dash·한글 등. stdout을 utf-8로
    감싼다 (§7).
 7. **수치를 기억으로 타이핑** — 금지. 소스 파일(csv/xlsx/md)에서 읽는다 (§8).
+8. **한글이 「하였/다」「연구/자」처럼 음절 중간에서 줄바꿈된다** — run 에 언어 태그가 없어서다.
+   저장 직전 `pptx_kit.tag_korean_runs(prs)` (§5). `latinLnBrk` 로는 안 고쳐진다.
 
 ---
 
@@ -82,6 +84,15 @@ bad = overflows(slide, sw=13.333, sh=7.5)   # 경계 넘친 shape 목록 → 배
 - 두 줄 이상 wrap되는 불릿은 `pptx_kit.hang(paragraph, width)`로 hanging indent를 줘야 wrap된
   줄이 마커 밑이 아니라 왼쪽 여백으로 도로 빠지는 걸 막는다(python-pptx엔 이 속성이 없음).
 - 잘림은 오직 **렌더로만** 보인다(§7). 카드·각주·긴 제목은 렌더 확인 필수.
+- ⭐ **한글 줄바꿈은 run 의 언어 태그가 정한다.** python-pptx 는 `a:rPr` 에 `lang` 을 안 쓰므로
+  PowerPoint 가 한글을 영어 문맥으로 끊는다 — 「하였/다」「대상/자의」처럼 **음절 중간**에서.
+  `lang="ko-KR"` 이 붙은 run 은 같은 상자 폭에서 어절 단위로 넘어간다(2026-09-14 COM 렌더 실측,
+  폭 2.6·3.3in × 태그 없음/ko-KR/ko-KR+altLang — altLang 은 무관). 처방은 **저장 직전 한 번**
+  `pptx_kit.tag_korean_runs(prs)`: 도형·표 칸·그룹을 모두 돌아 한글이 든 run 에만 붙인다
+  (`save_and_check` 는 이미 부른다). 도형을 만드는 함수마다 붙이게 하면 하나는 빠진다.
+  ⚠ **`latinLnBrk="1"` 은 처방이 아니다** — 설정이 XML 에 들어가도 한글은 여전히 끊기고,
+  오히려 「120명」이 「1/20명」으로 숫자가 쪼개진다. `eaLnBrk` 도 이 증상과 무관하다.
+  **렌더로만 보인다** — 텍스트 덤프·넘침 검사·`audit_text_fit` 전부 통과한다.
 - **폰트 하한(ppt_rules)**: 한글 제목바 30–32pt, 표 헤더 17pt, 본문 16pt, 보조 15pt,
   **13pt 미만 금지**. `audit_font_sizes.py`로 점검.
 
