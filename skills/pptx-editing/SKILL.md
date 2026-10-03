@@ -33,6 +33,15 @@ PowerPoint shows notes fine. The fix is to inject a body placeholder into the
 notes slide (`pptx_kit.speaker_note` does this). Don't conclude "impossible";
 check the assumption.
 
+## ⛔ 넘기기 전 마지막 단계 — PowerPoint 로 재저장 (모든 .pptx)
+
+    sys.path.insert(0, r"D:\onedrive\claude\agent\tools"); from office_finalize import finalize
+    finalize("presentation/덱.pptx")            # PowerPoint(DispatchEx)로 열어 그대로 저장, 슬라이드 글자·노트 전후 대조
+
+연구자 지시(2026-10-02): 「powerpoint와 엑셀도 그렇게 해야지」(Word 재저장 규칙의 확장). python-pptx 기본 템플릿은
+`lastModifiedBy=Steve Canny` · `description=generated using python-pptx` · app.xml 「Microsoft Macintosh PowerPoint」를
+남긴다(실측). `audit_doc_properties.py` 가 결함으로 잡는다. 재저장 «뒤»에 렌더·md5 확인을 한다(아래 COM 렌더 절).
+
 ## 빌드 루프 — 재빌드로 레이아웃을 «찾지» 마라 (덱·포스터 공통)
 
 2026-08-26 에 포스터 하나를 **25회 넘게** 재빌드했다. 대부분이 「빌드 → 넘쳤네 → 줄이고 →
@@ -223,6 +232,19 @@ python agent/tools/build_guard.py verify <산출물.pptx>   # 렌더 «직후»�
    necessary for some other unclosed gap, put it in **bold, at the very top** of
    the build script's own docstring — not mid-file near an unrelated slide's
    comment, where the next session won't see it before running the script.
+4. **Never rebuild a deck the person has open.** With OneDrive AutoSave, PowerPoint
+   merges the open copy with your new file and saves it back — every text box twice;
+   build, audit and render all pass, and the person finds it ("왜 글씨가 2번 적혀있냐",
+   ISLR2 2026-10-01, three times in one day). `build_guard.guard()` and
+   `pptx_kit.save_and_check()` now refuse while the file is open in PowerPoint/Word/Excel
+   (asked over COM, so co-authored files with no local lock are caught too). On refusal,
+   **ask the person to close it — never close their Office for them.** To try a change
+   meanwhile, build elsewhere: `out, is_test = pptx_kit.test_out(OUT)` (env `DECK_OUT`).
+5. **Keep the criticised version.** Call `pptx_kit.snapshot_previous(OUT)` before
+   overwriting (→ `_versions/<name>__YYMMDD-HHMM.pptx`): feedback refers to a specific
+   build, and the before/after pair is what makes it reusable. Korean decks also call
+   `pptx_kit.korean_style_gate(prs)` (on-screen 「~다」 / 「~ㄹ 것:」 → SystemExit).
+   Reference wiring: `ISLR2/Ch3_선형회귀/make_deck.py` main() (also `session_feedback.gate`).
 
 ## Workflow
 
@@ -432,7 +454,7 @@ diff the returned XML, then re-render every deck and compare.
 |---|---|
 | `pptx_kit.py` | Palette-agnostic **mechanics**: `new_deck`, `blank_slide_layout`, `rect`, `slide_number`, **`speaker_note`** (rebuild-proof notes; injects the missing placeholder), `fit_picture` (PIL-measured, overflow-safe image), `overflows` (boundary check), `hang` (hanging indent — python-pptx has no property for it), `text_units`/`wrapped_row_count` (Hangul-aware wrap-length estimate, for pre-sizing a card before drawing it), **`dtable`** (학술 서식의 **진짜 표** — 가로 3선·세로선 없음·채우기 없음, 행 높이는 `wrapped_lines` 로 실측. 표를 텍스트박스로 흉내내지 않게 해주는 함수이니 표가 필요하면 여기부터), **`tag_korean_runs`** (한글 run 에 `lang="ko-KR"` — 없으면 PowerPoint 가 한글을 음절 중간에서 줄바꿈한다. 한국어 덱은 저장 직전에 부를 것, guide §5), `check_surface_leaks`/`save_and_check` (gate a save on caller-supplied banned-phrase hits + overflow — see §11 for why the phrase list is never a shared default; also runs `tag_korean_runs`). Also carries native-equation builders (`equation_slot`, `promote_equations`, `m_frac`/`m_sub`/`m_sup`/`m_nary`/`m_sqrt`/`m_acc`) — only relevant if a slide needs a real OOXML equation object; see guide §10 before using these. Import it; project style layers on top. |
 | `inspect_pptx.py FILE` | Structure + notes + **overflow** dump. First thing to run on any deck. |
-| `audit_text_fit.py FILE [--all]` | Asks PowerPoint how big the text really is and flags only text that runs **off-slide** or **onto another text/picture**. Exit 1 on a hit, so a build can gate. **A textbox does not clip — it spills**, and spilling over a background fill is normal layering; treating either as an error makes the check cry wolf (two earlier cuts of this script did exactly that, 3/3 false on a clean deck). |
+| `audit_text_fit.py FILE [--all]` | Asks PowerPoint how big the text really is and flags text that runs **off-slide**, **onto another text/picture**, or **out of the framed box that holds it** (카드·상자 — 2026-09-28 신설. 카드는 「칠·테두리가 보이는 도형 안에 글상자가 통째로 들어 있는가」로 배경과 가른다. 담는 조건을 위 모서리만으로 보면 표의 가로 괘선이 글상자를 담은 것으로 읽혀 전수 오탐이 난다). ⚠ **글상자로 그린 표 위에 얹힌 글은 못 잡는다** — 「글상자끼리 겹침」으로 넓혀 봤다가 고친 덱에서 오탐 31건이 나와 되돌렸다. 그 부류는 렌더를 눈으로 본다. 시험: `audit_text_fit_selftest.py`(걸리는 카드 1 · 안 걸리는 카드 1). Exit 1 on a hit, so a build can gate. **A textbox does not clip — it spills**, and spilling over a background fill is normal layering; treating either as an error makes the check cry wolf (two earlier cuts of this script did exactly that, 3/3 false on a clean deck). |
 | `audit_surface_text.py FILE [--max-fig N] [--max-tab N]` | «있으면 안 되는 말»이 남았는지 기계로 훑는다 — 편집 해명·내비게이션 안내·재진술 신호·내부 파일명, 그리고 **번호 drift**(산출물엔 Figure가 3개인데 캡션에 "Figure 9"가 남은 경우). `audit_text_fit.py`가 «글자가 넘치는가»를 본다면 이건 «내용이 표면에 남았는가»를 본다. exit 1이라 빌드 게이트로 쓸 수 있다. 사람 눈으로 훑는 방식은 반복해서 실패한다. |
 | `render_pptx.py FILE [--pdf OUT]` | Render to PDF (PowerPoint COM) then PNG per slide, for the §5 visual check. |
 | `selftest.py` | Proves `speaker_note` round-trips (write → reopen → read) on a placeholder-less notes master, with no real template. |

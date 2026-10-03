@@ -71,7 +71,9 @@ def collect(path):
                 stored_rows[(_si, _sh.shape_id)] = [round(r.height / 360000.0, 4)
                                                     for r in _sh.table.rows]
 
+    # ⛔ 사람이 열어 둔 PowerPoint 에 붙을 수 있다 — 내가 띄운 경우에만 Quit (2026-09-30, render_pptx.py 와 같은 사고)
     app = win32.Dispatch("PowerPoint.Application")
+    had_open = app.Presentations.Count > 0
     pres = app.Presentations.Open(os.path.abspath(path), WithWindow=False, ReadOnly=True)
     measured, predicted, grown = {}, {}, []
     try:
@@ -118,7 +120,8 @@ def collect(path):
                 predicted[name] = round(float(sp.Height) * PT2CM, 4)
     finally:
         pres.Close()
-        app.Quit()
+        if not had_open and app.Presentations.Count == 0:
+            app.Quit()
     return measured, predicted, grown
 
 

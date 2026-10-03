@@ -38,6 +38,29 @@ CASES = [
     ("provenance", "Source: Table2_main_260819", True),
     ("meta", "Adjusted for age, sex, and smoking.", False),
     ("nav", "Table 1. Baseline characteristics", False),
+    # ── nav: 국문 진행 안내(2026-09-26) ───────────────────────────────
+    ("nav", "직업별로 이 질문에 답할 자료가 있는가 — 다음 장", True),
+    ("nav", "여기서 대책이 갈림", True),
+    ("nav", "뒤에서 다시 다룬다", True),
+    # 「여기서」·「장」 자체는 정상 국문이라 걸리면 안 된다
+    ("nav", "여기서 쓰는 자료는 15개 주의 전화조사다", False),
+    ("nav", "표 2는 산업 20개를 한 장에 담았다", False),
+]
+
+# dash_form 은 «장당 밀도»라 따로 -- (paras, 걸려야 하는 슬라이드 번호들)
+DASH = [
+    # 한 장에 셋 이상이면 틀로 읽힌다(2026-09-26 6주차 덱 BRFSS 장에서 넷이 몰렸다)
+    ([(1, "대마 모듈 — 2016년 추가"),
+      (1, "산업·직업 모듈 — 2013년 NIOSH 가 만든 문항"),
+      (1, "문항은 세 부분 — 핵심·선택·주 추가")], [1]),
+    # 정의 목록 「용어(원어) — 뜻」은 그 자리에서 옳다 -- 셋이어도 걸리면 안 된다
+    ([(3, "CAT  카티논 (cathinone) — MCAT 의 대사체"),
+      (3, "농도 (ng/L) — 하수 유입수에서 잰 값"),
+      (3, "소비량 (mg/일/1000명) — 역산한 값")], []),
+    # 한 줄이면 리듬이다 -- 걸리면 안 된다
+    ([(1, "적발된 사람 수이지 사용률이 아님 — 분모가 없다"),
+      (1, "전체 마약류사범 수치이고 대마만 따로 본 것이 아님"),
+      (2, "기준집단 — 사용률이 평균에 가까운 군")], []),
 ]
 
 # caps_emphasis 는 «덱 전체» 문맥이라 따로 -- (paras, 걸려야 하는 낱말들)
@@ -69,8 +92,14 @@ def run():
         if got != sorted(want_words):
             bad.append("[caps_emphasis] deck%d  기대=%s 실제=%s" % (i, want_words, got))
 
-    total = len(CASES) + len(DECKS)
-    neg = sum(1 for _, _, w in CASES if not w) + sum(1 for _, w in DECKS if not w)
+    for paras, want in DASH:
+        got = sorted({h[1] for h in M.dash_form(paras)})
+        if got != sorted(want):
+            bad.append("dash_form %r -> %r (want %r)" % (paras[0][1][:28], got, want))
+
+    total = len(CASES) + len(DECKS) + len(DASH)
+    neg = (sum(1 for _, _, w in CASES if not w) + sum(1 for _, w in DECKS if not w)
+           + sum(1 for _, w in DASH if not w))
     print("%d cases (%d of them must NOT fire)" % (total, neg))
     if bad:
         print("FAIL %d:" % len(bad))

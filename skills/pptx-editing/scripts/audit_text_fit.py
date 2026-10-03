@@ -76,8 +76,12 @@ def measure(path):
                     is_tbl = int(sp.HasTable) == -1      # to collision checks unless flagged
                 except Exception:
                     is_tbl = False
+                try:                       # msoTrue=-1. 칠이나 테두리가 보이면 «상자»로 읽힌다
+                    framed = int(sp.Fill.Visible) == -1 or int(sp.Line.Visible) == -1
+                except Exception:
+                    framed = False
                 shapes.append(dict(name=name, l=l, t=t, w=w, h=h, tw=tw, th=th,
-                                   txt=txt, is_pic=is_pic, is_tbl=is_tbl))
+                                   txt=txt, is_pic=is_pic, is_tbl=is_tbl, framed=framed))
             slides.append((si, shapes))
     finally:
         pres.Close()
@@ -161,6 +165,63 @@ def main():
                     collide.append((si, s, o))
                     break
 
+    # ── 2026-09-28 에 두 번 놓친 자리 두 곳을 더 본다 ─────────────────────────────
+    #  ⓐ 글자가 «자기를 담고 있던 상자»(카드)를 뚫고 나간다. 지금까지는 「평범한 넘침」으로
+    #     넘어갔다 — 이웃이 글을 안 가진 도형이면 carries_content 가 False 였기 때문이다.
+    #     카드는 테두리가 «보이므로» 뚫고 나간 것이 눈에 띈다. 배경과는 «담고 있는가»로 가른다.
+    #  ⓑ 넘치지 않아도, 놓인 자리가 표·그림과 겹치면 겹친다(손으로 좌표를 박을 때 난다).
+    burst, placed = [], []
+    for si, shapes in slides:
+        for s in shapes:
+            if s["tw"] is None:
+                continue
+            t_r, t_b = s["l"] + max(s["tw"], s["w"]), s["t"] + max(s["th"], s["h"])
+            for o in shapes:
+                if o is s or o["w"] <= 0 or o["tw"] is not None:
+                    continue
+                if not o["framed"] or o["w"] * o["h"] > 0.75 * sw * sh_:
+                    continue                      # 슬라이드 배경은 카드가 아니다
+                # ⚠ «담고 있다»는 선언된 글상자가 통째로 들어간다는 뜻이다. 위 모서리만 보면
+                #   표의 가로 괘선(높이 0.03in)이 글상자를 담은 것으로 읽혀 전부 오탐이 된다
+                #   (2026-09-28 실측: 슬11 표에서 6건).
+                holds = (o["l"] - a.tol <= s["l"] and s["l"] + s["w"] <= o["l"] + o["w"] + a.tol
+                         and o["t"] - a.tol <= s["t"]
+                         and s["t"] + s["h"] <= o["t"] + o["h"] + a.tol)
+                over = max(t_b - (o["t"] + o["h"]), t_r - (o["l"] + o["w"]))
+                if holds and over > a.minover:
+                    burst.append((si, s, o, over))
+                    break
+            # ⓑ 넘치지 않아도, «놓인 자리»가 표·그림 위인가(손으로 좌표를 박을 때 난다).
+            # ⚠ «글상자끼리»로 넓혀 봤다가 되돌렸다(2026-09-28): 고친 덱에서 오탐 31건이 나왔다.
+            #   표를 글상자로 그리는 덱(kit 의 table_slide)이 많아 정상 배치가 전부 걸린다.
+            #   그래서 «진짜 표·그림» 위에 놓인 경우만 본다. 글상자로 그린 표 위의 겹침은
+            #   이 검사가 «못 잡는다» — 그건 렌더를 눈으로 봐야 한다(그 사고가 2026-09-28 슬11).
+            for o in shapes:
+                if o is s or not (o["is_tbl"] or o["is_pic"]):
+                    continue
+                # 배경으로 깐 큰 그림 위의 글상자는 «정상 레이어링»이다 — 원본 슬라이드 이미지를
+                # 전폭으로 깔고 그 여백에 주석을 얹는 덱이 있다(2026-09-28 islr2 세션 보고, 5건).
+                # 이 파일이 원래 갖고 있던 「배경 fill 위는 정상」 예외와 같은 부류다.
+                if o["is_pic"] and o["w"] * o["h"] >= 0.5 * sw * sh_:
+                    continue
+                ox = min(s["l"] + s["w"], o["l"] + o["w"]) - max(s["l"], o["l"])
+                oy = min(s["t"] + s["h"], o["t"] + o["h"]) - max(s["t"], o["t"])
+                small = min(s["w"] * s["h"], o["w"] * o["h"])
+                if ox > 0 and oy > 0 and small > 0 and (ox * oy) / small >= 0.25:
+                    placed.append((si, s, o))
+                    break
+
+    if burst:
+        print(chr(10) + f"[상자 밖 {len(burst)}건] 글자가 카드·상자의 테두리를 뚫고 나갑니다")
+        for si, s, o, over in burst:
+            print(f"  슬{si:3d} {s['name'][:22]:22s} → {o['name'][:18]:18s} 초과 {over:+.2f}in  "
+                  f"{s['txt'].replace(chr(13),' / ')[:44]}")
+    if placed:
+        print(chr(10) + f"[자리 겹침 {len(placed)}건] 글상자가 표·그림 위에 놓였습니다")
+        for si, s, o in placed:
+            print(f"  슬{si:3d} {s['name'][:22]:22s} → {o['name'][:18]:18s}  "
+                  f"{s['txt'].replace(chr(13),' / ')[:44]}")
+
     n_text = sum(1 for _, shp in slides for s in shp if s["tw"] is not None)
     print(f"{os.path.basename(a.deck)} — 텍스트 도형 {n_text}개 (PowerPoint 실측)")
 
@@ -194,7 +255,7 @@ def main():
     if not offslide and not collide:
         print(f"  OK 슬라이드 밖 0건, 겹침 0건"
               f"{f'  (박스 초과 {len(spill)}건은 정상 범위)' if spill else ''}")
-    return 1 if (offslide or collide) else 0
+    return 1 if (offslide or collide or burst or placed) else 0
 
 
 if __name__ == "__main__":

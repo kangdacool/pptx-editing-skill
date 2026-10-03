@@ -34,6 +34,12 @@ def new_deck(template=None, width_in=13.333, height_in=7.5):
     fresh' idiom, done by hand because python-pptx has no delete-slide API. slide_width/height are set;
     the caller tracks them if its styled components need SW/SH."""
     prs = Presentation(template) if template else Presentation()
+    # python-pptx 기본 템플릿은 속성에 제작자(Steve Canny)·「generated using python-pptx」를 박는다.
+    # audit_doc_properties 가 FAIL 로 잡는데, 빌더마다 따로 지우다 ISLR2 두 덱에서 둘 다 빠뜨렸다
+    # (2026-09-23) — 만들어지는 자리에서 비운다. 작성자는 빌더가 cp.author 로 넣는다.
+    cp = prs.core_properties
+    if cp.last_modified_by == "Steve Canny" or "python-pptx" in (cp.comments or ""):
+        cp.author = ""; cp.last_modified_by = ""; cp.comments = ""
     if not template:
         prs.slide_width = Inches(width_in); prs.slide_height = Inches(height_in)
     lst = prs.slides._sldIdLst
@@ -426,8 +432,11 @@ import os as _os
 #   only ever worked on a single machine -- and its first branch pointed two levels ABOVE
 #   the home directory, which exists nowhere. Silent failure: a cache miss just recomputes,
 #   so nobody noticed it had never worked for anyone else.
-_HERE = _os.path.dirname(_os.path.abspath(__file__))
-_LAB_CACHE = _os.path.normpath(_os.path.join(_HERE, "..", "..", "..", "..", "agent", "cache"))
+# ⚠ realpath — 이 스킬은 ~/.claude/skills 정션으로도 불린다. abspath 로 계산하면 정션 쪽에서는 연구실 캐시가
+#   아니라 ~/.cache 의 «빈» 캐시를 보게 되어, measure_boxes.py(실제 경로로 실행)가 적은 실측을 빌더가 한 번도
+#   못 읽었다(2026-10-01 실측: 키 458 개 일치, 캐시 적중 0). 두 경로가 같은 파일로 풀리게 한다.
+_HERE = _os.path.dirname(_os.path.realpath(__file__))
+_LAB_CACHE =_os.path.normpath(_os.path.join(_HERE, "..", "..", "..", "..", "agent", "cache"))
 if _os.environ.get("PPTX_KIT_CACHE"):
     CACHE_PATH = _os.environ["PPTX_KIT_CACHE"]
 elif _os.path.isdir(_LAB_CACHE):
@@ -723,6 +732,22 @@ def tag_korean_runs(prs):
     return n
 
 
+def _refuse_if_open(path):
+    """Refuse to overwrite a deck that is open in Office (OneDrive co-authoring merges the open copy
+    with the new file -> every shape twice; ISLR2 2026-10-01). Lives in agent/tools/build_guard.py;
+    skipped silently when that lab tool is not on this machine (the skill must work stand-alone)."""
+    try:
+        from build_guard import refuse_if_open
+    except ImportError:
+        tools = _os.path.join(_os.path.dirname(_os.path.realpath(__file__)),
+                              *[_os.pardir] * 4, "agent", "tools")
+        if not _os.path.exists(_os.path.join(tools, "build_guard.py")):
+            return
+        _sys.path.insert(0, _os.path.normpath(tools))
+        from build_guard import refuse_if_open
+    refuse_if_open(path)
+
+
 def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
     """Save + gate on surface leaks and boundary overflow in one call. Raises SystemExit (does not
     write a "saved" log line the caller can mistake for success) if either check fails -- a deck
@@ -733,6 +758,7 @@ def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
     that can disagree. Tags Korean runs first (`tag_korean_runs`) so wrapping is by word.
     """
     tag_korean_runs(prs)
+    _refuse_if_open(path)
     prs.save(path)
     leaks = check_surface_leaks(prs, leak_terms or [])
     overflow_hits = []
@@ -752,3 +778,64 @@ def save_and_check(prs, path, leak_terms=None, sw=13.333, sh=7.5, tol=0.02):
         raise SystemExit(f"save_and_check failed -- leaks={len(leaks)}, overflow={len(overflow_hits)}. "
                           f"Fix and rebuild before delivering.")
     return prs
+
+
+# ---------------------------------------------------------------------------------------------------
+# Rebuild safety: test-build path, snapshot-before-overwrite, Korean on-screen style gate.
+# Promoted from ISLR2 Ch3 make_deck.py (2026-10-02) so every deck builder gets them, not one folder.
+# Order inside a builder:  out, is_test = test_out(OUT)  ->  build_guard.guard(out) unless is_test
+# (guard also refuses while the deck is open in Office)  ->  build  ->  korean_style_gate(prs)  ->
+# snapshot_previous(out) unless is_test  ->  prs.save(out)  ->  promote_equations  ->  stamp(out).
+# ---------------------------------------------------------------------------------------------------
+
+def test_out(default_path, env="DECK_OUT"):
+    """(path, is_test). With env DECK_OUT set, build there only -- never touch the canonical deck,
+    its _versions/ history or its build fingerprint. Use it to try a change while the person has the
+    real deck open, or to diff a refactor against the last good build (diff_pptx.py)."""
+    p = _os.environ.get(env)
+    return (p, True) if p else (default_path, False)
+
+
+def snapshot_previous(out_path, also_ext=(".pdf",), vdir=None):
+    """Copy the deck (and its PDF) about to be overwritten into _versions/<name>__YYMMDD-HHMM.ext.
+    Why: feedback is about a specific build; without the «criticised» version the before/after pair
+    that makes feedback reusable is lost (ISLR2 Ch3: the 9/13 and 9/29 builds are gone)."""
+    import shutil, time
+    vdir = vdir or _os.path.join(_os.path.dirname(_os.path.abspath(out_path)), "_versions")
+    _os.makedirs(vdir, exist_ok=True)
+    tag = time.strftime("%y%m%d-%H%M")
+    saved = []
+    for src in [out_path] + [_os.path.splitext(out_path)[0] + e for e in also_ext]:
+        if _os.path.exists(src):
+            base, ext = _os.path.splitext(_os.path.basename(src))
+            dst = _os.path.join(vdir, "%s__%s%s" % (base, tag, ext))
+            shutil.copy2(src, dst)
+            saved.append(dst)
+    return saved
+
+
+KOREAN_STYLE_RULES = [
+    (_re.compile(r"[가-힣]다\.?$"), "on-screen line ends in 「~다」 — use 음슴체 / 「레이블: 설명」"),
+    (_re.compile(r"[가-힣]ㄹ? ?것:|할 것:|볼 것:|물을 것:|있는 것:|없는 것:"), "rhetorical 「~ㄹ 것:」 label"),
+]
+
+
+def korean_style_gate(prs, extra_rules=(), skip_slides=()):
+    """SystemExit if any on-screen paragraph breaks this lab's Korean slide register.
+    The lab's Korean decks are 개조식: 음슴체·명사형 lines, 「레이블: 설명」, noun-phrase titles.
+    Lines ending in 「~다」 and 「~할 것:」 labels read as AI prose (researcher, 2026-09-28 / 10-01).
+    Speaker notes are not checked -- full sentences belong there. skip_slides (1-based) is for a slide
+    that legitimately quotes prose (a verbatim citation). Covers shapes, table cells and groups."""
+    rules = list(KOREAN_STYLE_RULES) + list(extra_rules)
+    bad = []
+    for i, s in enumerate(prs.slides, 1):
+        if i in skip_slides:
+            continue
+        for frame in _text_frames(s.shapes):
+            for p in frame.paragraphs:
+                t = "".join(r.text for r in p.runs).strip()
+                for rx, why in rules:
+                    if t and rx.search(t):
+                        bad.append("  slide %d: %s — 「%s」" % (i, why, t[:60]))
+    if bad:
+        raise SystemExit("korean_style_gate:\n" + "\n".join(bad))

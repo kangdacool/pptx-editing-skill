@@ -50,7 +50,11 @@ DEFAULT = {
             r"\bnotably\b|\bimportantly\b|\bhonestly\b|it is worth noting|"
             r"\balready\s+(unreliable|noted|established|known|discussed|mentioned|shown|seen)\b",
     "nav": r"see (Table|Figure|column|panel)|decomposed in|\bcolumn \d|as shown (above|below)|"
-           r"refer to (Table|Figure)",
+           r"refer to (Table|Figure)|"
+           # 국문 진행 안내(2026-09-26 추가) — 발표자가 말로 할 일이 화면에 적힌 것이다.
+           # 실제로 잡힌 것: 「…답할 자료가 있는가 — 다음 장」, 「여기서 대책이 갈림」.
+           # 닫힌 목록만 넣는다. 「여기서」는 정상 국문이라 갈린다/보자 류와 붙을 때만.
+           r"다음 장|앞 장에서|뒤에서 다시|여기서[^.]{0,12}(갈린|갈림|보자|짚)",
     "restate": r"\bI\.e\.|\bi\.e\.,|in other words|that is to say|this means that",
     "provenance": r"\.csv\b|\.rds\b|\.xlsx\b|Source: [A-Z][A-Za-z0-9_]*_|output/tables",
     # 2026-08-20 신설. 위 넷은 «편집 흔적»(내가 편집자로서 남긴 말)이고, 이건 «수사»다 --
@@ -71,8 +75,28 @@ DEFAULT = {
     "rhetoric": r"^\s*(The\s+(hook|consequence|takeaway|upshot|punchline)|"
                 r"Key\s+point|Organizing\s+principle|Why\s+this\s+matters)\s*[:.]?\s*$|"
                 r"[↑↓]|"
+                # ④ 국문 «~ㄹ 것:» 라벨 -- 「물을 것: 이 정도 이탈로…」「볼 것: …」. 제목이 내용이 아니라
+                #    청중에게 내리는 지시의 틀이 된다(2026-09-16 기의통, 사용자: 「"물을 것" 같은 말은
+                #    제발 output에 넣지 마. 다르게 쓸 수 있잖아」). 콜론이 붙은 꼴만 잡는다 --
+                #    「제출 전에 확인할 것」 같은 체크리스트 제목(콜론 없음)은 사용자가 승인한 형태다.
+                r"(?:^|\s)[가-힣]+\s*것\s*[:：]|"
                 r"\b[A-Za-z]{3,}\s*[≠≈]\s*[A-Za-z]{3,}\b",
+    # 2026-09-30 신설(face_mci_reversion). 규칙은 [[ppt-rules]] 「제목은 내용이다」에 전날 적혀 있었는데
+    # 도구가 없어 다음 날 같은 부류가 또 나갔다(「Three outcomes, as in the paper」). 두 부류:
+    #   ① 작업 경위·남의 논문과의 관계를 말하는 문구 -- 청중이 알게 되는 사실이 아니다.
+    #   ② 해야 할 일 목록이 화면에 남은 것(「Still to confirm」·TODO·미확인).
+    # 「pre-specified」는 넣지 않았다 -- 사전명세가 «있는» 연구에서는 정당한 말이다. 그런 것은
+    # 프로젝트 빌더의 게이트나 --extra-pattern 으로 건다.
+    "process": r"\bas in the (paper|previous|original)\b|\bsame (structure|approach|design) as\b|"
+               r"\bfollowing (the paper|[A-Z][a-z]+ et al)|\b(now with|our version|new version|"
+               r"revised version|updated version)\b|\bstill to (confirm|check|decide)\b|"
+               r"\bTODO\b|\bTBD\b|확인 필요|미확인|추후 확인",
 }
+
+# 내부 변수명(`dem_new`·`mci_more`)은 «결과 발표»에서는 누출이지만 «자료원 소개·코드북» 덱에서는
+# 청중이 찾아 써야 할 정보다(2026-09-30 실측: KODIVA 자료 소개 덱이 19건 걸렸고 전부 정당했다).
+# register 의존이므로 DEFAULT 에 넣지 않고 --identifiers 로 켠다. 결과·학회 덱은 켠다.
+IDENTIFIER = r"(?<![\w/.])[a-z][a-z0-9]*_[a-z0-9_]+\b"
 
 
 def caps_emphasis(paras):
@@ -119,6 +143,32 @@ def caps_emphasis(paras):
             for k, (si, w) in sorted(caps.items()) if k in lower]
 
 
+def dash_form(paras, per_slide=3):
+    """「명사구 — 설명구」가 «한 장에 여러 번» 나오면 틀로 읽힌다(2026-09-26 신설).
+
+    한 줄만으로는 판단이라 DEFAULT 정규식에 못 넣는다([[ppt-rules]] 의 measured 사례:
+    제목 38개 중 21개가 이 꼴이면 템플릿으로 읽힌다). 그래서 «장당 개수»로 본다 --
+    실패는 한 장에 넷이 몰린 모양으로 왔다(2026-09-26 6주차 덱 BRFSS 장).
+    """
+    import collections
+    # ⚠ 오탐 한 부류를 판별식으로 뺀다(2026-09-26 9주차 약어 슬라이드): 「용어(원어) — 뜻」은
+    #   정의 목록의 «올바른» 형태다. 앞머리가 닫는 괄호로 끝나면 정의로 본다 --
+    #   「CAT 카티논 (cathinone) — MCAT 의 대사체」·「농도 (ng/L) — …」. 실패를 낳은 쪽
+    #   (「대마 모듈 — 2016년 추가」·「문항은 세 부분 — …」)은 괄호로 끝나지 않는다.
+    form = re.compile(r"^(?![^—]*\)\s*—)[^—]{2,28}\s—\s\S")
+    by = collections.defaultdict(list)
+    for si, t in paras:
+        t = re.sub(r"^[•▪\-]\s*", "", t).strip()
+        if form.match(t):
+            by[si].append(t)
+    out = []
+    for si, lines in sorted(by.items()):
+        if len(lines) >= per_slide:
+            out.append(("rhetoric-dash", si, "%d줄" % len(lines),
+                        "「명사구 — 설명구」가 한 장에 %d번: %s" % (len(lines), lines[0][:40])))
+    return out
+
+
 def paragraphs(path):
     from pptx import Presentation
     prs = Presentation(path)
@@ -149,9 +199,13 @@ def main():
     ap.add_argument("--skip", action="append", default=[], choices=sorted(DEFAULT),
                     help="이 register에선 정상인 기본 범주를 끈다. 예: 내부 회의 덱은 "
                          "'출처: xxx.csv' 표기가 **바람직하므로** --skip provenance.")
+    ap.add_argument("--identifiers", action="store_true",
+                    help="내부 변수명(snake_case)을 잡는다. 결과·학회 덱용 -- 자료 소개·코드북 덱은 끈다.")
     a = ap.parse_args()
 
     pats = {k: re.compile(v, re.I) for k, v in DEFAULT.items() if k not in a.skip}
+    if a.identifiers:
+        pats["identifier"] = re.compile(IDENTIFIER)   # 대소문자 구분: 약어_약어는 변수명이 아닐 수 있다
     if a.skip:
         print("(register상 제외한 범주: %s)" % ", ".join(sorted(set(a.skip))))
     for i, ex in enumerate(a.extra_pattern):
@@ -179,6 +233,7 @@ def main():
         hits += drift("Table", a.max_tab)
     if "rhetoric" not in a.skip:
         hits += caps_emphasis(paras)
+        hits += dash_form(paras)
 
     print("%s -- %d text blocks scanned" % (a.file, len(paras)))
     if not hits:

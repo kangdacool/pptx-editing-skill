@@ -98,7 +98,10 @@ def snapshot(prs, text_only=False):
                     out[(i, sh.shape_id, "r%d" % ri)] = (
                         sh.name, cells, None, None, None, None)
         if s.has_notes_slide:
-            t = (s.notes_slide.notes_text_frame.text or "").strip()
+            # ⚠ 노트 슬라이드는 있는데 본문 자리표시자가 없는 덱이 있다 — notes_text_frame 이 None 이면
+            #   예전에는 AttributeError 로 죽었다(2026-09-15, 인사의4 시범실습 덱).
+            nf = s.notes_slide.notes_text_frame
+            t = ((nf.text if nf is not None else "") or "").strip()
             if t:
                 out[(i, -1, "note")] = ("(speaker note)", t, None, None, None, None)
     return out

@@ -34,7 +34,12 @@ PP_PNG = 18   # ppSaveAsPNG (exports every slide as a PNG into a folder)
 
 def via_com(path, pdf, png_dir):
     import win32com.client
+    # ⛔ PowerPoint 는 «한 대에 하나»다 — Dispatch 는 사람이 열어 둔 PowerPoint 에 붙는다.
+    #    예전에는 끝에 무조건 app.Quit() 을 불러 «사람의 PowerPoint 를 통째로 꺼 버렸다»
+    #    (2026-09-30 연구자: 「내 컴퓨터에서 ppt 열면 자꾸 알아서 꺼버리냐」 — 렌더 수십 번 = 수십 번 꺼짐).
+    #    → 열기 전에 이미 열린 프레젠테이션이 있었으면 «내 것만 닫고» 앱은 그대로 둔다.
     app = win32com.client.Dispatch("PowerPoint.Application")
+    had_open = app.Presentations.Count > 0
     pres = app.Presentations.Open(os.path.abspath(path), WithWindow=False)
     try:
         pres.SaveAs(os.path.abspath(pdf), PP_PDF)
@@ -42,7 +47,9 @@ def via_com(path, pdf, png_dir):
             os.makedirs(png_dir, exist_ok=True)
             pres.SaveAs(os.path.abspath(png_dir), PP_PNG)  # writes Slide1.PNG, ... into png_dir
     finally:
-        pres.Close(); app.Quit()
+        pres.Close()
+        if not had_open and app.Presentations.Count == 0:
+            app.Quit()
 
 def via_soffice(path, pdf):
     outdir = os.path.dirname(os.path.abspath(pdf)) or "."
