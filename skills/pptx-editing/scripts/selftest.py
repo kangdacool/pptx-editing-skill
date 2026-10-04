@@ -176,8 +176,30 @@ def test_tag_korean_runs():
     print("PASS  tag_korean_runs(): 한글 run 에만 · 표 칸·그룹 포함 · save_and_check 경유 저장본에 남음.")
 
 
+def test_korean_style_gate_labels():
+    """구어 물음·동사구 라벨은 막고, 명사 라벨·번호 구획 제목·긴 본문 줄은 통과시킨다(2026-10-04)."""
+    from pptx.util import Inches
+    from pptx_kit import korean_style_gate, KOREAN_STYLE_RULES
+    label_rx = KOREAN_STYLE_RULES[-1][0]
+    for t in ["무엇을 쟀나", "어떻게 조사했나", "이렇게 읽기", "따져 보면", "해마다 재는 숫자", "무엇을 가정하나"]:
+        assert label_rx.search(t), f"걸려야 한다: {t}"
+    for t in ["변수", "조사 방법", "해석", "평가", "측정된 효과", "모형 가정", "I. 어떤 법이 통과됐나",
+              "시행 시기", "모집 결과", "병원이 환자를 못 받는 진짜 이유를 다시 따져 보면"]:
+        assert not label_rx.search(t), f"통과해야 한다: {t}"
+    prs = new_deck()
+    s = prs.slides.add_slide(blank_slide_layout(prs))
+    s.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(3), Inches(0.5)).text_frame.text = "따져 보면"
+    try:
+        korean_style_gate(prs)
+        raise AssertionError("korean_style_gate 가 「따져 보면」을 통과시켰다")
+    except SystemExit:
+        pass
+    print("PASS  korean_style_gate(): 구어 라벨 6 차단 · 명사 라벨·번호 구획 제목·긴 줄 통과.")
+
+
 if __name__ == "__main__":
     main()
     test_text_and_leak_mechanics()
     test_dtable()
     test_tag_korean_runs()
+    test_korean_style_gate_labels()

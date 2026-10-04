@@ -817,6 +817,13 @@ def snapshot_previous(out_path, also_ext=(".pdf",), vdir=None):
 KOREAN_STYLE_RULES = [
     (_re.compile(r"[가-힣]다\.?$"), "on-screen line ends in 「~다」 — use 음슴체 / 「레이블: 설명」"),
     (_re.compile(r"[가-힣]ㄹ? ?것:|할 것:|볼 것:|물을 것:|있는 것:|없는 것:"), "rhetorical 「~ㄹ 것:」 label"),
+    # Box / card / table-row labels (one line, <=14 chars) phrased as a spoken question or verb phrase.
+    # Researcher 2026-10-04, on a «plain-language» deck: 「무엇을 쟀나」→변수, 「어떻게 조사했나」→조사 방법,
+    # 「이렇게 읽기」→해석, 「따져 보면」→평가, 「해마다 재는 숫자」→측정된 효과. Plain language belongs in the
+    # body; labels keep the academic noun. Numbered section titles (「I. 어떤 법이 통과됐나」) are exempt.
+    (_re.compile(r"^(?![IVXⅠ-Ⅹ]+\.|\d)(?=.{2,14}$)(?:.*(?:했나|쟀나|됐나|봤나|었나|았나|는가|을까|볼까|보면|보자|봅시다)"
+                 r"|(?:이렇게|무엇을|어떻게|왜|얼마나)\s.*|.*(?:재는|잰|쟀).*)$"),
+     "spoken-question / verb-phrase label — use the academic noun (변수·조사 방법·해석·평가·측정된 효과·가정)"),
 ]
 
 

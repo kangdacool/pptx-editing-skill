@@ -243,7 +243,8 @@ python agent/tools/build_guard.py verify <산출물.pptx>   # 렌더 «직후»�
 5. **Keep the criticised version.** Call `pptx_kit.snapshot_previous(OUT)` before
    overwriting (→ `_versions/<name>__YYMMDD-HHMM.pptx`): feedback refers to a specific
    build, and the before/after pair is what makes it reusable. Korean decks also call
-   `pptx_kit.korean_style_gate(prs)` (on-screen 「~다」 / 「~ㄹ 것:」 → SystemExit).
+   `pptx_kit.korean_style_gate(prs)` (on-screen 「~다」 / 「~ㄹ 것:」 / spoken-question labels such as
+   「무엇을 쟀나」「따져 보면」 → SystemExit; labels take the academic noun: 변수 · 조사 방법 · 해석 · 평가).
    Reference wiring: `ISLR2/Ch3_선형회귀/make_deck.py` main() (also `session_feedback.gate`).
 
 ## Workflow
