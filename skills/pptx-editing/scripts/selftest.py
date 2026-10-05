@@ -184,7 +184,8 @@ def test_korean_style_gate_labels():
     for t in ["무엇을 쟀나", "어떻게 조사했나", "이렇게 읽기", "따져 보면", "해마다 재는 숫자", "무엇을 가정하나"]:
         assert label_rx.search(t), f"걸려야 한다: {t}"
     for t in ["변수", "조사 방법", "해석", "평가", "측정된 효과", "모형 가정", "I. 어떤 법이 통과됐나",
-              "시행 시기", "모집 결과", "병원이 환자를 못 받는 진짜 이유를 다시 따져 보면"]:
+              "시행 시기", "모집 결과", "병원이 환자를 못 받는 진짜 이유를 다시 따져 보면",
+              "현재는 시행 전", "부재는 없음", "실재는 미확인", "얼마나 자주(빈도)"]:   # 첫 판의 오탐
         assert not label_rx.search(t), f"통과해야 한다: {t}"
     prs = new_deck()
     s = prs.slides.add_slide(blank_slide_layout(prs))
