@@ -207,6 +207,17 @@ def m_acc(base_t, chr_="̄"):
             f'<m:e>{m_run(base_t)}</m:e></m:acc>')
 
 
+def m_bar(e_xml):
+    """Overbar across the whole base (x̄ as a real bar, not an accent): m_bar(m_run('x')).
+
+    Prefer this over m_acc(x, U+0304) for means: the combining-macron accent is only about half
+    the width of the letter and, at projector resolution (~1280 px wide), shrinks to a dot so x̄
+    reads as ẋ (ISLR2 Ch5 deck, 2026-10-06 — fine at 400 dpi, wrong at 1280 px). m:bar draws a
+    rule the full width of the base at every size."""
+    return (f'<m:bar><m:barPr><m:pos m:val="top"/>{_MATH_CTRLPR}</m:barPr>'
+            f'<m:e>{e_xml}</m:e></m:bar>')
+
+
 def m_sqrt(e_xml):
     """Square root (degree hidden, i.e. a plain √, not an nth-root)."""
     return (f'<m:rad><m:radPr><m:degHide m:val="on"/>{_MATH_CTRLPR}</m:radPr>'
