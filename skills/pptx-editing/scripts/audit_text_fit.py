@@ -42,9 +42,15 @@ PT = 72.0
 
 def measure(path):
     """Per slide: slide size + [(name, l, t, w, h, text_w, text_h, text)] for every shape."""
+    import shutil, tempfile
     import win32com.client as win32
+    # ⛔ 원본이 아니라 «복사본»을 연다(2026-10-07): 사람이 같은 덱을 열어 두었으면 원본 Open 이 그 창을 가리키고
+    #    끝의 Close 가 그 창을 닫으며 OneDrive 공동편집이 두 판을 합쳐 저장했다(글상자 두 벌).
+    tmpdir = tempfile.mkdtemp(prefix="fit_copy_")
+    copy = os.path.join(tmpdir, "fit_copy" + os.path.splitext(path)[1])
+    shutil.copyfile(os.path.abspath(path), copy)
     app = win32.Dispatch("PowerPoint.Application")
-    pres = app.Presentations.Open(os.path.abspath(path), WithWindow=False, ReadOnly=True)
+    pres = app.Presentations.Open(copy, WithWindow=False, ReadOnly=True)
     slides = []
     try:
         sw, sh_ = float(pres.PageSetup.SlideWidth) / PT, float(pres.PageSetup.SlideHeight) / PT
@@ -85,6 +91,7 @@ def measure(path):
             slides.append((si, shapes))
     finally:
         pres.Close()
+        shutil.rmtree(tmpdir, ignore_errors=True)
     return sw, sh_, slides
 
 

@@ -72,9 +72,15 @@ def collect(path):
                                                     for r in _sh.table.rows]
 
     # ⛔ 사람이 열어 둔 PowerPoint 에 붙을 수 있다 — 내가 띄운 경우에만 Quit (2026-09-30, render_pptx.py 와 같은 사고)
+    # ⛔ 원본이 아니라 «복사본»을 연다(2026-10-07): 원본 Open 은 사람이 열어 둔 같은 덱의 창을 가리키고,
+    #    끝의 Close 가 그 창을 닫으며 OneDrive 공동편집이 두 판을 합쳐 저장했다(글상자 두 벌).
+    import shutil, tempfile
+    tmpdir = tempfile.mkdtemp(prefix="measure_copy_")
+    copy = os.path.join(tmpdir, "measure_copy" + os.path.splitext(path)[1])
+    shutil.copyfile(os.path.abspath(path), copy)
     app = win32.Dispatch("PowerPoint.Application")
     had_open = app.Presentations.Count > 0
-    pres = app.Presentations.Open(os.path.abspath(path), WithWindow=False, ReadOnly=True)
+    pres = app.Presentations.Open(copy, WithWindow=False, ReadOnly=True)
     measured, predicted, grown = {}, {}, []
     try:
         for si in range(1, pres.Slides.Count + 1):
@@ -122,6 +128,7 @@ def collect(path):
         pres.Close()
         if not had_open and app.Presentations.Count == 0:
             app.Quit()
+        shutil.rmtree(tmpdir, ignore_errors=True)
     return measured, predicted, grown
 
 
