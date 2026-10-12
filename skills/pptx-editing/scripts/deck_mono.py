@@ -303,34 +303,70 @@ def _cell_lines(text, w_in, sz):
     return n
 
 
-def table(s, headers, rows, col_x, col_w, y0=1.72, sz=16, note=None):
-    """가로줄만 있는 표. 반환값 = 닫는 줄(또는 note) 아래 y.
+def _hex(c):
+    return "%02X%02X%02X" % (c[0], c[1], c[2])
 
-    ⚠ 행 높이는 «그 행의 실제 줄 수»로 잡는다. 고정 높이로 두면 여러 줄 셀이 다음 행을
-    파고들어 글자가 겹친다 — 2026-09-11 실측이고, 좌표 검사로는 안 잡히고 렌더에서만 보인다.
 
-    ⚠ **가로줄은 `col_x[0]` 부터 «항상 12.6 까지» 통짜로 그어진다** — 마지막 열이 어디서
-    끝나든 상관없다. 그래서 표 오른쪽에 주석 상자를 두면 줄 위에 얹힌다(2026-09-12 실측).
-    표 옆에 무언가를 놓고 싶으면 그 말을 표 «아래»로 내리거나 표를 쓰지 말 것.
+def table(s, headers, rows, col_x, col_w, y0=1.72, sz=16, note=None, header=True, bold_col0=False):
+    """가로줄만 있는 «진짜 표»(PowerPoint 표 개체). 반환값 = 닫는 줄(또는 note) 아래 y.
+
+    ⛔ 2026-10-10 연구자: 「내가 맨날 이야기하는데 왜 표를 자꾸 하나하나의 텍스트 박스로 만들지???」 —
+       이 함수가 칸마다 글상자 + 선 도형으로 표를 «그리고» 있었다. 이제 add_table 하나다(편집·복사가 표로 된다).
+    ⚠ 행 높이는 «그 행의 실제 줄 수»로 잡는다(PowerPoint 는 넘치는 행을 늘리고, 그러면 아래 개체와 겹친다).
+    ⚠ 머리행 높이는 본문 행과 같은 식이다 — 옛 판은 머리행 위아래에 0.3in 넘는 빈 띠를 두어
+       「첫행 높이가 과하다」를 거듭 지적받았다.
+    ⚠ 표는 `col_x[0]` 부터 12.6in 까지 — 마지막 열이 남는 폭을 가진다. 표 옆에 다른 개체를 두지 말 것.
+    `header=False` 면 rows 만(«항목 | 내용» 방법 표). `bold_col0` = 첫 열 굵게.
+    행 좌표는 `table.last_rows` = [(top, height), …](머리행 포함 아님)로 남긴다 — 행 표시 상자는 그것을 쓴다.
     """
+    from pptx.util import Emu
+    from pptx_kit import _cell_borders
     L, W = col_x[0], 12.6 - col_x[0]
+    widths = [col_x[j + 1] - col_x[j] for j in range(len(col_x) - 1)] + [12.6 - col_x[-1]]
     line_h = sz * 0.0178 + 0.055                     # 한 줄이 차지하는 세로(인치)
-    hdr_n = max(_cell_lines(h, col_w[j], sz) for j, h in enumerate(headers))
-    hdr_h = max(0.42, hdr_n * line_h + 0.10)
-    rect(s, L, y0, W, 0.035, INK)
-    for j, hcell in enumerate(headers):
-        tb(s, col_x[j], y0 + 0.10, col_w[j], hdr_h, hcell, sz=sz, bold=True, color=INK)
-    rect(s, L, y0 + hdr_h + 0.20, W, 0.02, INK)
-    y = y0 + hdr_h + 0.32
-    for i, row in enumerate(rows):
-        n = max(_cell_lines(c, col_w[j], sz) for j, c in enumerate(row))
-        rh = max(0.40, n * line_h + 0.14)
-        for j, cell in enumerate(row):
-            tb(s, col_x[j], y, col_w[j], rh, str(cell), sz=sz, color=BODY)
-        if i < len(rows) - 1:
-            rect(s, L, y + rh - 0.03, W, 0.012, HAIRLINE)
-        y += rh
-    rect(s, L, y, W, 0.035, INK)
+    pad = 0.12
+
+    def _h(cells):
+        n = max(_cell_lines(c, max(widths[j] - 0.12, 0.3), sz) for j, c in enumerate(cells))
+        return n * line_h + pad
+
+    all_rows = ([list(headers)] if header else []) + [list(r) for r in rows]
+    heights = [_h(r) for r in all_rows]
+    gf = _flat(s.shapes.add_table(len(all_rows), len(widths), Inches(L), Inches(y0),
+                                  Inches(W), Inches(sum(heights))))
+    tbl = gf.table
+    tbl.first_row = tbl.horz_banding = tbl.first_col = tbl.vert_banding = False
+    for j, w in enumerate(widths):
+        tbl.columns[j].width = Emu(int(round(w * 914400)))
+    for i, h in enumerate(heights):
+        tbl.rows[i].height = Emu(int(round(h * 914400)))
+    last = len(all_rows) - 1
+    for i, r in enumerate(all_rows):
+        is_head = header and i == 0
+        for j in range(len(widths)):
+            c = tbl.cell(i, j)
+            c.fill.background()
+            c.margin_left, c.margin_right = Inches(0.06), Inches(0.06)
+            c.margin_top, c.margin_bottom = Inches(0.03), Inches(0.03)
+            c.vertical_anchor = MSO_ANCHOR.MIDDLE
+            if i == last:
+                bot = (2.0, _hex(INK))
+            elif is_head:
+                bot = (1.25, _hex(INK))
+            else:
+                bot = (0.75, _hex(HAIRLINE))
+            _cell_borders(c, top=((2.0, _hex(INK)) if i == 0 else None), bottom=bot)
+            tf = c.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.text = str(r[j]) if j < len(r) else ""
+            p.font.size, p.font.name = Pt(sz), KO
+            p.font.bold = bool(is_head or (bold_col0 and j == 0))
+            p.font.color.rgb = INK if (is_head or (bold_col0 and j == 0)) else BODY
+            p.alignment = PP_ALIGN.LEFT
+    y = y0 + sum(heights)
+    off = 1 if header else 0
+    table.last_rows = [(y0 + sum(heights[:off + k]), heights[off + k]) for k in range(len(rows))]
     if note:
         nh = max(0.34, _cell_lines(note, W, 14) * (14 * 0.0178 + 0.055) + 0.10)
         tb(s, L, y + 0.14, W, nh, note, sz=14, color=MUTE)

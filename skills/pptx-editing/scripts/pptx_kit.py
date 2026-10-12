@@ -571,6 +571,9 @@ def _cell_borders(cell, top=None, bottom=None, left=None, right=None, color="000
     want = {"lnL": left, "lnR": right, "lnT": top, "lnB": bottom}
     for tag in ("lnL", "lnR", "lnT", "lnB"):
         pt = want[tag]
+        col = color
+        if isinstance(pt, tuple):        # (굵기 pt, "RRGGBB") — 변마다 색이 다를 때(2026-10-10 deck_mono.table)
+            pt, col = pt
         ln = etree.Element(_q(tag))
         ln.set("cap", "flat")
         ln.set("cmpd", "sng")
@@ -578,7 +581,7 @@ def _cell_borders(cell, top=None, bottom=None, left=None, right=None, color="000
         if pt:
             ln.set("w", str(int(round(pt * 12700))))
             fill = etree.SubElement(ln, _q("solidFill"))
-            etree.SubElement(fill, _q("srgbClr")).set("val", color)
+            etree.SubElement(fill, _q("srgbClr")).set("val", col)
         else:
             etree.SubElement(ln, _q("noFill"))
         # 스키마 순서를 지켜 끼워 넣는다
